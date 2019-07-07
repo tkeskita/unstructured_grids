@@ -18,7 +18,9 @@
 
 # <pep8 compliant>
 
-# Input/Output routines for OpenFOAM PolyMesh unstructured grids
+# Input/Output routines for OpenFOAM PolyMesh unstructured grids.
+# More information about PolyMesh:
+# https://cfd.direct/openfoam/user-guide/mesh-description/
 
 import bpy
 import logging
@@ -42,15 +44,16 @@ def polymesh_to_ugdata(self):
 
     ob = initialize_ug_object()
     verts = polymesh_get_verts('points')
-    edges = [] # TODO
-    faces = [] # TODO
+    [edges, faces] = polymesh_get_faces('owner', 'neighbour', 'faces')
+    # TODO: boundary
     # Create vertices and faces into mesh object
     ob.data.from_pydata(verts, edges, faces)
+    ob.data.validate()
 
 
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object'''
-    
+
     name = "Unstructured Grid"   
     if name in bpy.data.objects:
         l.debug("Delete existing object " + name)
@@ -67,14 +70,18 @@ def initialize_ug_object():
     return ob
 
 
-def polymesh_get_verts(text_name):
-    '''Creates list of vertex triplets from polymesh points text block'''
+def polymesh_get_verts(name):
+    '''Creates list of vertex triplets from PolyMesh points text block'''
 
     import re
     verts = [] # list of x, y, z point coordinate triplets
 
-    text_points = bpy.data.texts[text_name]
-    for tl in text_points.lines:
+    if not name in bpy.data.texts:
+        l.error("text not found: %s" % name)
+        return verts
+
+    text_name = bpy.data.texts[name]
+    for tl in text_name.lines:
         line = tl.body
         regex = re.search(r'^\(([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\)', line, re.M)
         if regex:
@@ -83,6 +90,112 @@ def polymesh_get_verts(text_name):
             z = float(regex.group(3))
             verts.append(tuple([x, y, z]))
 
-    l.debug("Number of triplets read from %s: %d" % (text_name, len(verts)))
+    l.debug("Number of triplets read from %s: %d" % (name, len(verts)))
     return verts
 
+
+def polymesh_get_faces(owner_name, neighbour_name, faces_name):
+    '''Creates edge and face list from PolyMesh owner, neighbour and
+    faces text blocks
+    '''
+
+    edges = [] # List of edge vertex index pairs, to be generated
+    faces = [] # List of face vertex index lists, to be generated
+
+    # Read in owner and neighbour lists
+    owner = polymesh_get_intlist(owner_name)
+    neighbour = polymesh_get_intlist(neighbour_name)
+    face_verts = polymesh_get_list_intlist(faces_name)
+
+    # Create faces at boundary and only edges for internal faces
+    i = 0
+    for verts in face_verts:
+        if i < len(neighbour):
+            # Internal face, add edges
+            for j in range(len(face_verts[i])):
+                edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
+        else:
+            # Boundary face, add faces
+            faces.append(tuple(face_verts[i]))
+        i += 1
+
+    l.debug("Number of edge index pairs generated from %s: %d" % (faces_name, len(edges)))
+    l.debug("Number of boundary face index lists generated from %s: %d" % (faces_name, len(faces)))
+
+    return edges, faces
+
+
+def polymesh_get_intlist(name):
+    '''Creates integer list from argument PolyMesh integer text block'''
+
+    import re
+    iList = [] # list of integers to be generated
+    inside = False # boolean for marking integer list in text
+
+    if not name in bpy.data.texts:
+        l.error("text not found: %s" % name)
+        return iList
+
+    text_name = bpy.data.texts[name]
+    for tl in text_name.lines:
+        line = tl.body
+
+        # Opening of integer list by single parenthesis
+        regex = re.search(r'^\(', line, re.M)
+        if regex:
+            inside = True
+
+        # Closing of integer list by single parenthesis
+        regex2 = re.search(r'^\)', line, re.M)
+        if regex2:
+            inside = False
+
+        # Integer, at start of line
+        regex3 = re.search(r'^(\d+)', line, re.M)
+        if inside and regex3:
+            iList.append(int(regex3.group(1)))
+
+    l.debug("Number of integers read from %s: %d" % (name, len(iList)))
+    return iList
+
+
+def polymesh_get_list_intlist(name):
+    '''Creates list of integer lists from argument PolyMesh
+    text block
+    '''
+
+    # TODO: Get rid of code duplication
+
+    import re
+    iList = [] # list of integers lists to be generated
+    inside = False # boolean for marking integer list in text
+
+    if not name in bpy.data.texts:
+        l.error("text not found: %s" % name)
+        return iList
+
+    text_name = bpy.data.texts[name]
+    for tl in text_name.lines:
+        line = tl.body
+
+        # Opening of integer list by single parenthesis
+        regex = re.search(r'^\(', line, re.M)
+        if regex:
+            inside = True
+
+        # Closing of integer list by single parenthesis
+        regex2 = re.search(r'^\)', line, re.M)
+        if regex2:
+            inside = False
+
+        # List of integer list within parenthesis
+        regex3 = re.search(r'^\d+\(([\d\s]+)\)', line, re.M)
+        if inside and regex3:
+            vals = regex3.group(1).split()
+            valList = []
+            for val in vals:
+                valList.append(int(val))
+            iList.append(valList)
+
+    l.debug("Number of integer lists read from %s: %d" % (name, len(iList)))
+    return iList
