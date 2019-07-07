@@ -15,4 +15,14 @@ grids.
 
 This add-on is currently at proof-of-concept stage and work in progress.
 
+## Idea Description
 
+- Cell and face information related to unstructured grids are kept in
+  separate Python object data model
+
+- Besides moving of vertices, modifications of unstructured grids
+  rely on special operator which keep data model and Blender mesh
+  object contents in sync
+
+- UG should support OpenFOAM PolyMesh features. Work is started by
+  implementing PolyMesh import and export functions.
