@@ -38,18 +38,6 @@ if "bpy" in locals():
 else:
     import math
     import bpy
-    from bpy.props import (
-        StringProperty,
-        BoolProperty,
-        FloatProperty,
-        EnumProperty,
-    )
-    from bpy_extras.io_utils import (
-        ImportHelper,
-        ExportHelper,
-        orientation_helper,
-        axis_conversion,
-    )
     from . import(
         io_polymesh
         )
@@ -65,8 +53,55 @@ else:
 import logging
 l = logging.getLogger(__name__)
 
+# Common settings as property group
+class UGProperties(bpy.types.PropertyGroup):
+    export_path: bpy.props.StringProperty(
+        name="Export Path",
+        description="Path to Export Unstructured Grid",
+        default="//",
+        maxlen=1024,
+        subtype="DIR_PATH",
+    )
+    text_boundary: bpy.props.StringProperty(
+        name="PolyMesh Boundary File Contents",
+        description="PolyMesh Boundary File Contents",
+        default="",
+        maxlen=0,
+    )
+    text_faces: bpy.props.StringProperty(
+        name="PolyMesh Faces File Contents",
+        description="PolyMesh Faces File Contents",
+        default="",
+        maxlen=0,
+    )
+    text_neighbour: bpy.props.StringProperty(
+        name="PolyMesh Neighbour File Contents",
+        description="PolyMesh Neighbour File Contents",
+        default="",
+        maxlen=0,
+    )
+    text_owner: bpy.props.StringProperty(
+        name="PolyMesh Owner File Contents",
+        description="PolyMesh Owner File Contents",
+        default="",
+        maxlen=0,
+    )
+    text_points: bpy.props.StringProperty(
+        name="PolyMesh Points File Contents",
+        description="PolyMesh Points File Contents",
+        default="",
+        maxlen=0,
+    )
+
+
+def menu_import(self, context):
+    self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
+                         text="OpenFOAM PolyMesh (UG)"
+    )
 
 classes = (
+    UGProperties,
+    io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
 )
 
@@ -74,9 +109,16 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    bpy.types.Scene.ug_props = \
+        bpy.props.PointerProperty(type = UGProperties)
+
+    bpy.types.TOPBAR_MT_file_import.append(menu_import)
+
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
+
+    bpy.types.TOPBAR_MT_file_import.remove(menu_import)
 
 if __name__ == "__main__":
     register()
