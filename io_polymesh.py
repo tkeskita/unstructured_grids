@@ -143,6 +143,7 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
     edges = [] # List of edge vertex index pairs, to be generated
     faces = [] # List of face vertex index lists, to be generated
+    gen_edges = bpy.context.scene.ug_props.generate_internal_edges
 
     # Read in owner and neighbour lists
     owner = polymesh_get_intlist(text_owner)
@@ -154,8 +155,9 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     for verts in face_verts:
         if i < len(neighbour):
             # Internal face, add edges
-            for j in range(len(face_verts[i])):
-                edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
+            if gen_edges:
+                for j in range(len(face_verts[i])):
+                    edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
         else:
             # Boundary face, add faces
             faces.append(tuple(face_verts[i]))

@@ -92,7 +92,11 @@ class UGProperties(bpy.types.PropertyGroup):
         default="",
         maxlen=0,
     )
-
+    generate_internal_edges: bpy.props.BoolProperty(
+        name="Generate Edges for Internal Faces",
+        description="Boolean for Generating Internal Face Edges",
+        default=False,
+    )
 
 def menu_import(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
