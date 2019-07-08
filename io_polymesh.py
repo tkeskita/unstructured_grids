@@ -29,7 +29,7 @@ from bpy_extras.io_utils import (
     orientation_helper,
     axis_conversion,
 )
-
+from .ug import *
 import logging
 l = logging.getLogger(__name__)
 
@@ -150,18 +150,36 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     neighbour = polymesh_get_intlist(text_neighbour)
     face_verts = polymesh_get_list_intlist(text_faces)
 
+    # Populate list of UGCells
+    for i in range(max(owner) + 1):
+        # Add new entry to list of UGCells
+        ugcell = UGCell(i)
+        ugcells.append(ugcell)
+
     # Create faces at boundary and only edges for internal faces
-    i = 0
-    for verts in face_verts:
+    for i in range(len(face_verts)):
+        # Add to list of UGFaces
+        ugface = UGFace(i, face_verts[i])
+        ugfaces.append(ugface)
+        # Add owner cell index
+        ugface.owneri = owner[i]
+        # Add face to owner's faces list
+        ugcells[owner[i]].faces.append(i)
+
+        # Add geometry to object
         if i < len(neighbour):
-            # Internal face, add edges
+            # Add neighbour cell index
+            ugface.neighbouri = neighbour[i]
+            # Add face to neighbour's faces list
+            ugcells[neighbour[i]].faces.append(i)
+
+            # Add edges if needed
             if gen_edges:
                 for j in range(len(face_verts[i])):
                     edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
         else:
             # Boundary face, add faces
             faces.append(tuple(face_verts[i]))
-        i += 1
 
     l.debug("Number of edge index pairs generated: %d" % len(edges))
     l.debug("Number of boundary face index lists generated: %d" % len(faces))

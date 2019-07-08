@@ -34,12 +34,14 @@ bl_info = {
 
 if "bpy" in locals():
     import importlib
+    importlib.reload(ug)
     importlib.reload(io_polymesh)
 else:
     import math
     import bpy
     from . import(
-        io_polymesh
+        ug,
+        io_polymesh,
         )
 
 # Set up logging of messages using Python logging
