@@ -39,9 +39,6 @@ class UG_OT_ImportPolyMesh(bpy.types.Operator, ImportHelper):
     bl_idname = "unstructured_grids.import_openfoam_polymesh"
     bl_label = "Import OpenFOAM PolyMesh"
 
-    #filename_ext = ".polyMesh"
-    #filter_glob: bpy.types.StringProperty(options={'HIDDEN'})
-
     def execute(self, context):
         read_polymesh_files(self)
         return {'FINISHED'}
@@ -72,6 +69,54 @@ def read_polymesh_files(self):
     return None
 
 
+class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
+    '''Export OpenFOAM PolyMesh as Unstructured Grid'''
+    bl_idname = "unstructured_grids.export_openfoam_polymesh"
+    bl_label = "Export OpenFOAM PolyMesh"
+
+    filename_ext = ".polyMesh"
+    def execute(self, context):
+        obname = "Unstructured Grid"
+        if not obname in bpy.data.objects:
+            self.report({'ERROR'}, "No points/faces were imported")
+            return {'FINISHED'}
+        ob =  bpy.data.objects[obname]
+        update_text_points(ob)
+        write_polymesh_files(self)
+        return {'FINISHED'}
+
+
+def update_text_points(ob):
+    '''Updates PolyMesh points string contents from Blender object'''
+
+    # Generate new text
+    text = of_vector_file_header('points') + "\n"
+    text += str(len(ob.data.vertices)) + "\n(\n"
+    for v in ob.data.vertices:
+        text += "(" + "%.6g" % v.co.x + " " \
+                + "%.6g" % v.co.y + " " \
+                + "%.6g" % v.co.z + ")\n"
+    text += ")\n"
+    bpy.context.scene.ug_props.text_points = text
+    return None
+
+def write_polymesh_files(self):
+    '''Write contents of data strings into PolyMesh files'''
+
+    import os
+    ug_props = bpy.context.scene.ug_props
+    dirpath = os.path.dirname(self.filepath)
+
+    filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
+    for f in filenames:
+        varname = "text_" + f
+        filepath = os.path.join(dirpath, f)
+        l.debug("Writing to: %s" % filepath)
+
+        with open(filepath, 'w') as outfile:
+            outfile.write(getattr(ug_props, varname))
+
+    return None
 
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
     '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
@@ -247,3 +292,16 @@ def polymesh_get_list_intlist(text):
 
     l.debug("Number of integer lists read: %d" % len(iList))
     return iList
+
+
+def of_vector_file_header(name):
+    '''Returns OpenFOAM vector dictionary file header using argument
+    name for object type
+    '''
+
+    h = "FoamFile\n{\n"
+    h += "    version     2.0;\n"
+    h += "    format      ascii;\n"
+    h += "    class       vectorField;\n"
+    h += "    object      " + name + ";\n}\n"
+    return h

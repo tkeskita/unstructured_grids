@@ -43,7 +43,7 @@ class UGFace:
     neighbouri = -1 # index of UGCell in ugfaces neighbouring this face
     facei = -1 # face index number, is updated on export only
     verts = [] # list of ordered vertex indices used by this face
-    mati = 0 # boundary patch (material) index number
+    mati = -1 # boundary patch (material) index number
 
     def __init__(self, i, verts):
         '''Initialize UGFace with face index and vertex list'''

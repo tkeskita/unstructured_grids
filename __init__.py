@@ -105,9 +105,15 @@ def menu_import(self, context):
                          text="OpenFOAM PolyMesh (UG)"
     )
 
+def menu_export(self, context):
+    self.layout.operator(io_polymesh.UG_OT_ExportPolyMesh.bl_idname, \
+                         text="OpenFOAM PolyMesh (UG)"
+    )
+
 classes = (
     UGProperties,
     io_polymesh.UG_OT_ImportPolyMesh,
+    io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
 )
 
@@ -119,12 +125,14 @@ def register():
         bpy.props.PointerProperty(type = UGProperties)
 
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
+    bpy.types.TOPBAR_MT_file_export.append(menu_export)
 
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_export)
 
 if __name__ == "__main__":
     register()
