@@ -82,6 +82,7 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
             return {'FINISHED'}
         ob =  bpy.data.objects[obname]
         update_text_points(ob)
+        update_text_faces()
         write_polymesh_files(self)
         return {'FINISHED'}
 
@@ -90,7 +91,7 @@ def update_text_points(ob):
     '''Updates PolyMesh points string contents from Blender object'''
 
     # Generate new text
-    text = of_vector_file_header('points') + "\n"
+    text = of_file_header('vectorField', 'points') + "\n"
     text += str(len(ob.data.vertices)) + "\n(\n"
     for v in ob.data.vertices:
         text += "(" + "%.6g" % v.co.x + " " \
@@ -98,6 +99,51 @@ def update_text_points(ob):
                 + "%.6g" % v.co.z + ")\n"
     text += ")\n"
     bpy.context.scene.ug_props.text_points = text
+    return None
+
+
+def update_text_faces():
+    '''Updates PolyMesh faces text string contents from UG data'''
+
+    def gen_line(verts):
+        '''Construct face definition text line from verts list'''
+        line = str(len(verts)) + "("
+        for j in range(len(verts) - 1):
+            line += str(verts[j]) + " "
+        line += str(verts[-1]) + ")\n"
+        return line
+
+    def face_pass(internal, i):
+        '''Go through ugfaces depending on argument internal:
+        True means only internal faces are to be processed,
+        False means only boundary faces are to be processed.
+        Argument i is next available face index. Returns the face definition
+        text for processed faces and next available face index.
+        '''
+        text = ''
+        for f in ugfaces:
+            if f.deleted:
+                continue
+            if internal and f.neighbouri == -1:
+                continue
+            if (not internal) and f.neighbouri != -1:
+                continue
+            f.facei = i # Set face index
+            text += gen_line(f.verts) # Add definition line and proceed
+            i += 1
+        return text, i
+
+    text_internal, i = face_pass(True, 0) # Internal face pass
+    l.debug("Internal faces: %d", i)
+    text_boundary, i = face_pass(False, i) # Boundary face pass
+    l.debug("All faces: %d", i)
+
+    # Generate text string
+    text = of_file_header('faceList', 'faces') + "\n"
+    text += str(i) + "\n(\n"
+    text += text_internal + text_boundary + ")\n"
+
+    bpy.context.scene.ug_props.text_faces = text
     return None
 
 def write_polymesh_files(self):
@@ -294,14 +340,14 @@ def polymesh_get_list_intlist(text):
     return iList
 
 
-def of_vector_file_header(name):
-    '''Returns OpenFOAM vector dictionary file header using argument
-    name for object type
+def of_file_header(class_name, object_name):
+    '''Returns OpenFOAM dictionary file header using argument
+    name for class and object type names
     '''
 
     h = "FoamFile\n{\n"
     h += "    version     2.0;\n"
     h += "    format      ascii;\n"
-    h += "    class       vectorField;\n"
-    h += "    object      " + name + ";\n}\n"
+    h += "    class       " + class_name + ";\n"
+    h += "    object      " + object_name + ";\n}\n"
     return h
