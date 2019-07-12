@@ -69,144 +69,6 @@ def read_polymesh_files(self):
     polymesh_to_ugdata(self)
     return None
 
-
-##### EXPORT #####
-
-class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
-    '''Export OpenFOAM PolyMesh as Unstructured Grid'''
-    bl_idname = "unstructured_grids.export_openfoam_polymesh"
-    bl_label = "Export OpenFOAM PolyMesh"
-
-    filename_ext = ".polyMesh"
-    def execute(self, context):
-        obname = "Unstructured Grid"
-        if not obname in bpy.data.objects:
-            self.report({'ERROR'}, "No points/faces were imported")
-            return {'FINISHED'}
-        ob =  bpy.data.objects[obname]
-        update_text_points(ob)
-        update_text_faces()
-        update_text_owner_neighbour()
-        write_polymesh_files(self)
-        return {'FINISHED'}
-
-
-def update_text_points(ob):
-    '''Updates PolyMesh points string contents from Blender object'''
-
-    # Generate new text
-    text = of_file_header('vectorField', 'points') + "\n"
-    text += str(len(ob.data.vertices)) + "\n(\n"
-    for v in ob.data.vertices:
-        text += "(" + "%.6g" % v.co.x + " " \
-                + "%.6g" % v.co.y + " " \
-                + "%.6g" % v.co.z + ")\n"
-    text += ")\n"
-    bpy.context.scene.ug_props.text_points = text
-    return None
-
-
-def update_text_faces():
-    '''Updates PolyMesh faces text string contents from UG data'''
-
-    def gen_line(verts):
-        '''Construct face definition text line from verts list'''
-        line = str(len(verts)) + "("
-        for j in range(len(verts) - 1):
-            line += str(verts[j]) + " "
-        line += str(verts[-1]) + ")\n"
-        return line
-
-    def face_pass(internal, i):
-        '''Go through ugfaces depending on argument internal:
-        True means only internal faces are to be processed,
-        False means only boundary faces are to be processed.
-        Argument i is next available face index. Returns the face definition
-        text for processed faces and next available face index.
-        '''
-        text = ''
-        if internal:
-            celli = 0 # Cell index
-            for c in ugcells:
-                c.celli = -1 # Reset cell indices
-
-        for f in ugfaces:
-            if f.deleted:
-                continue
-            if internal and f.neighbouri == -1:
-                continue
-            if (not internal) and f.neighbouri != -1:
-                continue
-            # TODO: Add per boundary passes
-            f.facei = i # Set face index
-            text += gen_line(f.verts) # Add definition line and proceed
-            if internal:
-                # Set cell indices if needed
-                if ugcells[f.owneri].celli == -1:
-                    ugcells[f.owneri].celli = celli
-                    celli += 1
-                if ugcells[f.neighbouri].celli == -1:
-                    ugcells[f.neighbouri].celli = celli
-                    celli += 1
-            i += 1
-        return text, i
-
-    text_internal, i = face_pass(True, 0) # Internal face pass
-    l.debug("Internal faces: %d", i)
-    text_boundary, i = face_pass(False, i) # Boundary face pass
-    l.debug("All faces: %d", i)
-
-    # Generate text string
-    text = of_file_header('faceList', 'faces') + "\n"
-    text += str(i) + "\n(\n"
-    text += text_internal + text_boundary + ")\n"
-
-    bpy.context.scene.ug_props.text_faces = text
-    return None
-
-
-def update_text_owner_neighbour():
-    '''Updates PolyMesh owner and neighbour text string contents from UG data'''
-
-    # Generate text string
-    text_owner = of_file_header('labelList', 'owner') + "\n"
-    text_owner += str(len(ugfaces)) + "\n(\n"
-
-    neighbour_faces = [f for f in ugfaces if f.neighbouri != -1]
-    text_neighbour = of_file_header('labelList', 'neighbour') + "\n"
-    text_neighbour += str(len(neighbour_faces)) + "\n(\n"
-
-    for f in ugfaces:
-        text_owner += str(f.owneri) + "\n"
-    for f in neighbour_faces:
-        text_neighbour += str(f.neighbouri) + "\n"
-
-    text_owner += ")\n"
-    text_neighbour += ")\n"
-
-    bpy.context.scene.ug_props.text_owner = text_owner
-    bpy.context.scene.ug_props.text_neighbour = text_neighbour
-    return None
-
-def write_polymesh_files(self):
-    '''Write contents of data strings into PolyMesh files'''
-
-    import os
-    ug_props = bpy.context.scene.ug_props
-    dirpath = os.path.dirname(self.filepath)
-
-    filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
-    for f in filenames:
-        varname = "text_" + f
-        filepath = os.path.join(dirpath, f)
-        l.debug("Writing to: %s" % filepath)
-
-        with open(filepath, 'w') as outfile:
-            outfile.write(getattr(ug_props, varname))
-
-    return None
-
-
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
     '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
     bl_idname = "unstructured_grids.polymesh_to_ug"
@@ -381,6 +243,143 @@ def polymesh_get_list_intlist(text):
 
     l.debug("Number of integer lists read: %d" % len(iList))
     return iList
+
+
+##### EXPORT #####
+
+class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
+    '''Export OpenFOAM PolyMesh as Unstructured Grid'''
+    bl_idname = "unstructured_grids.export_openfoam_polymesh"
+    bl_label = "Export OpenFOAM PolyMesh"
+
+    filename_ext = ".polyMesh"
+    def execute(self, context):
+        obname = "Unstructured Grid"
+        if not obname in bpy.data.objects:
+            self.report({'ERROR'}, "No points/faces were imported")
+            return {'FINISHED'}
+        ob =  bpy.data.objects[obname]
+        update_text_points(ob)
+        update_text_faces()
+        update_text_owner_neighbour()
+        write_polymesh_files(self)
+        return {'FINISHED'}
+
+
+def update_text_points(ob):
+    '''Updates PolyMesh points string contents from Blender object'''
+
+    # Generate new text
+    text = of_file_header('vectorField', 'points') + "\n"
+    text += str(len(ob.data.vertices)) + "\n(\n"
+    for v in ob.data.vertices:
+        text += "(" + "%.6g" % v.co.x + " " \
+                + "%.6g" % v.co.y + " " \
+                + "%.6g" % v.co.z + ")\n"
+    text += ")\n"
+    bpy.context.scene.ug_props.text_points = text
+    return None
+
+
+def update_text_faces():
+    '''Updates PolyMesh faces text string contents from UG data'''
+
+    def gen_line(verts):
+        '''Construct face definition text line from verts list'''
+        line = str(len(verts)) + "("
+        for j in range(len(verts) - 1):
+            line += str(verts[j]) + " "
+        line += str(verts[-1]) + ")\n"
+        return line
+
+    def face_pass(internal, i):
+        '''Go through ugfaces depending on argument internal:
+        True means only internal faces are to be processed,
+        False means only boundary faces are to be processed.
+        Argument i is next available face index. Returns the face definition
+        text for processed faces and next available face index.
+        '''
+        text = ''
+        if internal:
+            celli = 0 # Cell index
+            for c in ugcells:
+                c.celli = -1 # Reset cell indices
+
+        for f in ugfaces:
+            if f.deleted:
+                continue
+            if internal and f.neighbouri == -1:
+                continue
+            if (not internal) and f.neighbouri != -1:
+                continue
+            # TODO: Add per boundary passes
+            f.facei = i # Set face index
+            text += gen_line(f.verts) # Add definition line and proceed
+            if internal:
+                # Set cell indices if needed
+                if ugcells[f.owneri].celli == -1:
+                    ugcells[f.owneri].celli = celli
+                    celli += 1
+                if ugcells[f.neighbouri].celli == -1:
+                    ugcells[f.neighbouri].celli = celli
+                    celli += 1
+            i += 1
+        return text, i
+
+    text_internal, i = face_pass(True, 0) # Internal face pass
+    l.debug("Internal faces: %d", i)
+    text_boundary, i = face_pass(False, i) # Boundary face pass
+    l.debug("All faces: %d", i)
+
+    # Generate text string
+    text = of_file_header('faceList', 'faces') + "\n"
+    text += str(i) + "\n(\n"
+    text += text_internal + text_boundary + ")\n"
+
+    bpy.context.scene.ug_props.text_faces = text
+    return None
+
+
+def update_text_owner_neighbour():
+    '''Updates PolyMesh owner and neighbour text string contents from UG data'''
+
+    # Generate text string
+    text_owner = of_file_header('labelList', 'owner') + "\n"
+    text_owner += str(len(ugfaces)) + "\n(\n"
+
+    neighbour_faces = [f for f in ugfaces if f.neighbouri != -1]
+    text_neighbour = of_file_header('labelList', 'neighbour') + "\n"
+    text_neighbour += str(len(neighbour_faces)) + "\n(\n"
+
+    for f in ugfaces:
+        text_owner += str(f.owneri) + "\n"
+    for f in neighbour_faces:
+        text_neighbour += str(f.neighbouri) + "\n"
+
+    text_owner += ")\n"
+    text_neighbour += ")\n"
+
+    bpy.context.scene.ug_props.text_owner = text_owner
+    bpy.context.scene.ug_props.text_neighbour = text_neighbour
+    return None
+
+def write_polymesh_files(self):
+    '''Write contents of data strings into PolyMesh files'''
+
+    import os
+    ug_props = bpy.context.scene.ug_props
+    dirpath = os.path.dirname(self.filepath)
+
+    filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
+    for f in filenames:
+        varname = "text_" + f
+        filepath = os.path.join(dirpath, f)
+        l.debug("Writing to: %s" % filepath)
+
+        with open(filepath, 'w') as outfile:
+            outfile.write(getattr(ug_props, varname))
+
+    return None
 
 
 def of_file_header(class_name, object_name):
