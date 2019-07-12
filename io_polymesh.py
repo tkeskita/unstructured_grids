@@ -33,6 +33,7 @@ from .ug import *
 import logging
 l = logging.getLogger(__name__)
 
+##### IMPORT #####
 
 class UG_OT_ImportPolyMesh(bpy.types.Operator, ImportHelper):
     '''Import OpenFOAM PolyMesh as Unstructured Grid'''
@@ -69,6 +70,8 @@ def read_polymesh_files(self):
     return None
 
 
+##### EXPORT #####
+
 class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
     '''Export OpenFOAM PolyMesh as Unstructured Grid'''
     bl_idname = "unstructured_grids.export_openfoam_polymesh"
@@ -83,6 +86,7 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
         ob =  bpy.data.objects[obname]
         update_text_points(ob)
         update_text_faces()
+        update_text_owner_neighbour()
         write_polymesh_files(self)
         return {'FINISHED'}
 
@@ -121,6 +125,11 @@ def update_text_faces():
         text for processed faces and next available face index.
         '''
         text = ''
+        if internal:
+            celli = 0 # Cell index
+            for c in ugcells:
+                c.celli = -1 # Reset cell indices
+
         for f in ugfaces:
             if f.deleted:
                 continue
@@ -128,8 +137,17 @@ def update_text_faces():
                 continue
             if (not internal) and f.neighbouri != -1:
                 continue
+            # TODO: Add per boundary passes
             f.facei = i # Set face index
             text += gen_line(f.verts) # Add definition line and proceed
+            if internal:
+                # Set cell indices if needed
+                if ugcells[f.owneri].celli == -1:
+                    ugcells[f.owneri].celli = celli
+                    celli += 1
+                if ugcells[f.neighbouri].celli == -1:
+                    ugcells[f.neighbouri].celli = celli
+                    celli += 1
             i += 1
         return text, i
 
@@ -144,6 +162,30 @@ def update_text_faces():
     text += text_internal + text_boundary + ")\n"
 
     bpy.context.scene.ug_props.text_faces = text
+    return None
+
+
+def update_text_owner_neighbour():
+    '''Updates PolyMesh owner and neighbour text string contents from UG data'''
+
+    # Generate text string
+    text_owner = of_file_header('labelList', 'owner') + "\n"
+    text_owner += str(len(ugfaces)) + "\n(\n"
+
+    neighbour_faces = [f for f in ugfaces if f.neighbouri != -1]
+    text_neighbour = of_file_header('labelList', 'neighbour') + "\n"
+    text_neighbour += str(len(neighbour_faces)) + "\n(\n"
+
+    for f in ugfaces:
+        text_owner += str(f.owneri) + "\n"
+    for f in neighbour_faces:
+        text_neighbour += str(f.neighbouri) + "\n"
+
+    text_owner += ")\n"
+    text_neighbour += ")\n"
+
+    bpy.context.scene.ug_props.text_owner = text_owner
+    bpy.context.scene.ug_props.text_neighbour = text_neighbour
     return None
 
 def write_polymesh_files(self):
@@ -163,6 +205,7 @@ def write_polymesh_files(self):
             outfile.write(getattr(ug_props, varname))
 
     return None
+
 
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
     '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
