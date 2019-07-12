@@ -51,3 +51,20 @@ class UGFace:
         self.verts = verts
 
 ugfaces = [] # global list of all UGFaces
+
+
+class UGBoundary:
+    '''Class for Unstructured Grid patch (boundary face) objects'''
+
+    deleted = False # boolean for patches which contain zero boundary faces
+    patchname = 'default' # patch name
+    typename = 'default' # patch type name
+    inGroups = '' # name for patch group this patch is part of
+    nFaces = 0 # number of faces in patch
+    startFace = -1 # index to first face for this patch
+
+    def __init__(self, patchname):
+        '''Initialize UGBoundary with name patchname'''
+        self.patchname = patchname
+
+ugboundaries = [] # global list of all UGBoundaries

@@ -89,11 +89,11 @@ def polymesh_to_ugdata(self):
     verts = polymesh_get_verts(ug_props.text_points)
     [edges, faces] = polymesh_get_faces( \
         ug_props.text_owner, ug_props.text_neighbour, ug_props.text_faces)
-    # TODO: boundary
+    polymesh_get_boundary(ug_props.text_boundary)
     # Create vertices and faces into mesh object
     ob.data.from_pydata(verts, edges, faces)
     ob.data.validate()
-
+    # TODO: Add materials to boundary faces
 
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object'''
@@ -243,6 +243,62 @@ def polymesh_get_list_intlist(text):
 
     l.debug("Number of integer lists read: %d" % len(iList))
     return iList
+
+
+def polymesh_get_boundary(text):
+    '''Creates boundary objects from PolyMesh boundary text string'''
+
+    import re
+    inside = False # boolean for marking boundary entries in text
+
+    for line in text.splitlines():
+        # Opening of integer list by single parenthesis
+        regex = re.search(r'^\(', line, re.M)
+        if regex:
+            inside = True
+
+        # Closing of integer list by single parenthesis
+        regex2 = re.search(r'^\)', line, re.M)
+        if regex2:
+            inside = False
+
+        if not inside:
+            continue
+
+        # New entry is any word on its own line
+        regex = re.search(r'^\s+(\w+)$', line, re.M)
+        if regex:
+            patchname = str(regex.group(1))
+            l.debug("Reading in boundary patch definition: %s" % patchname)
+            patch = UGBoundary(patchname)
+            ugboundaries.append(patch)
+            continue
+
+        # type
+        regex = re.search(r'^\s+type\s+(\w+)\;$', line, re.M)
+        if regex:
+            patch.typename = str(regex.group(1))
+            continue
+
+        # inGroups
+        regex = re.search(r'^\s+inGroups\s+([\w\(\)]+)\;$', line, re.M)
+        if regex:
+            patch.inGroups = str(regex.group(1))
+            continue
+
+        # nFaces
+        regex = re.search(r'^\s+nFaces\s+(\d+)\;$', line, re.M)
+        if regex:
+            patch.nFaces = int(regex.group(1))
+            continue
+
+        # startFace
+        regex = re.search(r'^\s+startFace\s+(\d+)\;$', line, re.M)
+        if regex:
+            patch.startFace = int(regex.group(1))
+            continue
+
+    return None
 
 
 ##### EXPORT #####
