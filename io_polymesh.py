@@ -129,6 +129,7 @@ def polymesh_to_ugdata(self):
     ob.data.validate()
     apply_materials_to_boundaries(ob)
 
+
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object'''
 
@@ -377,7 +378,9 @@ def get_face_color(mati):
     [r, g, b] = [random.random() for i in range(3)]
     return [r, g, b, 1.0]
 
+
 ##### EXPORT #####
+
 
 class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
     '''Export OpenFOAM PolyMesh as Unstructured Grid'''
@@ -394,12 +397,13 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
         update_text_points(ob)
         update_text_faces()
         update_text_owner_neighbour()
+        update_text_boundary()
         write_polymesh_files(self)
         return {'FINISHED'}
 
 
 def update_text_points(ob):
-    '''Updates PolyMesh points string contents from Blender object'''
+    '''Updates PolyMesh points string contents from Blender object vertices'''
 
     # Generate new text
     text = of_file_header('vectorField', 'points') + "\n"
@@ -410,6 +414,7 @@ def update_text_points(ob):
                 + "%.6g" % v.co.z + ")\n"
     text += ")\n"
     bpy.context.scene.ug_props.text_points = text
+    l.debug("text_points updated points: %d" % len(ob.data.vertices))
     return None
 
 
@@ -459,9 +464,9 @@ def update_text_faces():
         return text, i
 
     text_internal, i = face_pass(True, 0) # Internal face pass
-    l.debug("Internal faces: %d", i)
+    l.debug("text_faces updated internal faces: %d", i)
     text_boundary, i = face_pass(False, i) # Boundary face pass
-    l.debug("All faces: %d", i)
+    l.debug("text_faces updated total number of faces: %d", i)
 
     # Generate text string
     text = of_file_header('faceList', 'faces') + "\n"
@@ -475,15 +480,18 @@ def update_text_faces():
 def update_text_owner_neighbour():
     '''Updates PolyMesh owner and neighbour text string contents from UG data'''
 
+    internal_faces = [f for f in ugfaces if not f.deleted]
+    ninternal = len(internal_faces)
+    neighbour_faces = [f for f in ugfaces if f.neighbouri != -1 and not f.deleted]
+    nneighbour = len(neighbour_faces)
+
     # Generate text string
     text_owner = of_file_header('labelList', 'owner') + "\n"
-    text_owner += str(len(ugfaces)) + "\n(\n"
-
-    neighbour_faces = [f for f in ugfaces if f.neighbouri != -1]
+    text_owner += str(ninternal + nneighbour) + "\n(\n"
     text_neighbour = of_file_header('labelList', 'neighbour') + "\n"
-    text_neighbour += str(len(neighbour_faces)) + "\n(\n"
+    text_neighbour += str(nneighbour) + "\n(\n"
 
-    for f in ugfaces:
+    for f in internal_faces:
         text_owner += str(f.owneri) + "\n"
     for f in neighbour_faces:
         text_neighbour += str(f.neighbouri) + "\n"
@@ -493,7 +501,42 @@ def update_text_owner_neighbour():
 
     bpy.context.scene.ug_props.text_owner = text_owner
     bpy.context.scene.ug_props.text_neighbour = text_neighbour
+    l.debug("text_owner updated faces: %d" % (ninternal + nneighbour))
+    l.debug("text_neighbour updated faces: %d" % nneighbour)
     return None
+
+
+def update_text_boundary():
+    '''Updates PolyMesh boundary text string contents from UG data'''
+
+    i = 0 # Boundary patch number
+    btext = '' # generated boundary entries
+    nboundaries = 0 # number of boundaries
+    for b in ugboundaries:
+        if b.deleted == True:
+            i += 1
+            continue
+        bfaces = [x for x in ugfaces if x.mati==i]
+        text = "    " + b.patchname + "\n    {\n"
+        text += "        type            " + b.typename + ";\n"
+        if b.inGroups != '':
+            text += "        inGroups        " + b.inGroups + ";\n"
+        text += "        nFaces          " + str(len(bfaces)) + ";\n"
+        text += "        startFace       " + str(bfaces[0].facei) + ";\n"
+        text += "    }\n"
+        btext += text
+        i += 1
+        nboundaries += 1
+
+    # Generate new text
+    text = of_file_header('polyBoundaryMesh', 'boundary') + "\n"
+    text += str(nboundaries) + "\n(\n"
+    text += btext + ")\n"
+
+    bpy.context.scene.ug_props.text_boundary = text
+    l.debug("text_boundary updated patches: %d" % nboundaries)
+    return None
+
 
 def write_polymesh_files(self):
     '''Write contents of data strings into PolyMesh files'''
@@ -511,6 +554,7 @@ def write_polymesh_files(self):
         with open(filepath, 'w') as outfile:
             outfile.write(getattr(ug_props, varname))
 
+    self.report({'INFO'}, "Exported PolyMesh to %r" % dirpath)
     return None
 
 
