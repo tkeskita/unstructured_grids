@@ -66,8 +66,42 @@ def read_polymesh_files(self):
         with open(filepath, 'r') as infile:
             setattr(ug_props, varname, infile.read())
 
+    polymesh_boundary_ingroup_fix()
     polymesh_to_ugdata(self)
     return None
+
+
+def polymesh_boundary_ingroup_fix():
+    '''Reformats ingroup entries spanning several lines into one line,
+    because otherwise multiline entry breaks regex matching logic
+    in polymesh_get_boundary
+    '''
+
+    import re
+    ug_props = bpy.context.scene.ug_props
+    text = ug_props.text_boundary
+
+    inside = False # boolean for marking boundary entries in text
+    result = ''
+    for line in text.splitlines():
+        regex = re.search(r'^\s*inGroups\s*$', line, re.M)
+        if regex:
+            # Initialize
+            inside = True
+            res = "        inGroups        "
+        elif inside:
+            res += line + ' '
+            regex = re.search(r'\;', line, re.M)
+            if regex:
+                # Reached end of inGroup
+                inside = False
+                result += res + '\n'
+        else:
+            result += line + '\n'
+
+    ug_props.text_boundary = result
+    return None
+
 
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
     '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
@@ -93,7 +127,7 @@ def polymesh_to_ugdata(self):
     # Create vertices and faces into mesh object
     ob.data.from_pydata(verts, edges, faces)
     ob.data.validate()
-    # TODO: Add materials to boundary faces
+    apply_materials_to_boundaries(ob)
 
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object'''
@@ -265,8 +299,8 @@ def polymesh_get_boundary(text):
         if not inside:
             continue
 
-        # New entry is any word on its own line
-        regex = re.search(r'^\s+(\w+)$', line, re.M)
+        # New entry is a word (with possibly special characters) on its own line
+        regex = re.search(r'^\s+([\w\%\:\-]+)$', line, re.M)
         if regex:
             patchname = str(regex.group(1))
             l.debug("Reading in boundary patch definition: %s" % patchname)
@@ -281,7 +315,7 @@ def polymesh_get_boundary(text):
             continue
 
         # inGroups
-        regex = re.search(r'^\s+inGroups\s+([\w\(\)]+)\;$', line, re.M)
+        regex = re.search(r'^\s+inGroups\s+([\w\s\(\)]+)\;\s*$', line, re.M)
         if regex:
             patch.inGroups = str(regex.group(1))
             continue
@@ -300,6 +334,48 @@ def polymesh_get_boundary(text):
 
     return None
 
+
+def apply_materials_to_boundaries(ob):
+    '''Sets materials to faces in object ob according to boundary assignments'''
+
+    mati = 0 # Material index
+    facecount = 0
+
+    # Delete all materials for a clean slate
+    for mat in bpy.data.materials:
+        bpy.data.materials.remove(mat)
+
+    # Process each boundary
+    for b in ugboundaries:
+        # Create new material if needed
+        l.debug("Material for %s: %d" % (b.patchname, mati))
+        mat = bpy.data.materials.new(name=b.patchname)
+        ob.data.materials.append(mat)
+        ob.data.materials[mati].diffuse_color = get_face_color(mati)
+
+        # Set material index to ugfaces
+        for i in range(b.startFace, b.startFace + b.nFaces):
+            ugfaces[i].mati = mati
+        # Set material index for mesh faces
+        for i in range(b.nFaces):
+            ob.data.polygons[facecount].material_index = mati
+            facecount += 1
+        mati += 1
+
+
+def get_face_color(mati):
+    '''Gives a color to argument material number'''
+
+    base_colors = [(0.3,0.3,0.3,1), (0,0,1,1), (1,0,0,1), (0,1,0,1), \
+             (0.7,0.7,0,1), (0,0.7,0.7,1), (0.7,0,0.7,1)]
+    if mati < len(base_colors):
+        return base_colors[mati]
+
+    # Get random colors after base colors
+    import random
+    random.seed(10043 + mati)
+    [r, g, b] = [random.random() for i in range(3)]
+    return [r, g, b, 1.0]
 
 ##### EXPORT #####
 
