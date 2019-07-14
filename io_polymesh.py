@@ -429,43 +429,53 @@ def update_text_faces():
         line += str(verts[-1]) + ")\n"
         return line
 
-    def face_pass(internal, i):
-        '''Go through ugfaces depending on argument internal:
-        True means only internal faces are to be processed,
-        False means only boundary faces are to be processed.
-        Argument i is next available face index. Returns the face definition
-        text for processed faces and next available face index.
+    def internal_face_pass():
+        '''Generate face definition text for internal faces.
+        Return text and number of internal faces.
         '''
+
         text = ''
-        if internal:
-            celli = 0 # Cell index
-            for c in ugcells:
-                c.celli = -1 # Reset cell indices
+        ind = 0 # face index
+        celli = 0 # cell index
 
-        for f in ugfaces:
-            if f.deleted:
-                continue
-            if internal and f.neighbouri == -1:
-                continue
-            if (not internal) and f.neighbouri != -1:
-                continue
-            # TODO: Add per boundary passes
-            f.facei = i # Set face index
+        # Reset all cell indices
+        for c in ugcells:
+            c.celli = -1
+
+        faces = [f for f in ugfaces if f.neighbouri != -1 and not f.deleted]
+        for f in faces:
+            f.facei = ind # Set face index
             text += gen_line(f.verts) # Add definition line and proceed
-            if internal:
-                # Set cell indices if needed
-                if ugcells[f.owneri].celli == -1:
-                    ugcells[f.owneri].celli = celli
-                    celli += 1
-                if ugcells[f.neighbouri].celli == -1:
-                    ugcells[f.neighbouri].celli = celli
-                    celli += 1
-            i += 1
-        return text, i
 
-    text_internal, i = face_pass(True, 0) # Internal face pass
+            # Set cell indices
+            if ugcells[f.owneri].celli == -1:
+                ugcells[f.owneri].celli = celli
+                celli += 1
+            if ugcells[f.neighbouri].celli == -1:
+                ugcells[f.neighbouri].celli = celli
+                celli += 1
+            ind += 1
+        return text, ind
+
+    def boundary_face_pass(ind):
+        '''Generate face definition text for boundary faces.
+        Return text and number of internal faces.
+        '''
+
+        text = ''
+        mati = 0 # material index
+        for b in ugboundaries:
+            faces = [f for f in ugfaces if f.mati == mati and f.neighbouri == -1 and not f.deleted]
+            for f in faces:
+                f.facei = ind # Set face index
+                text += gen_line(f.verts) # Add definition line and proceed
+                ind += 1
+            mati += 1
+        return text, ind
+
+    text_internal, i = internal_face_pass()
     l.debug("text_faces updated internal faces: %d", i)
-    text_boundary, i = face_pass(False, i) # Boundary face pass
+    text_boundary, i = boundary_face_pass(i)
     l.debug("text_faces updated total number of faces: %d", i)
 
     # Generate text string
@@ -480,18 +490,18 @@ def update_text_faces():
 def update_text_owner_neighbour():
     '''Updates PolyMesh owner and neighbour text string contents from UG data'''
 
-    internal_faces = [f for f in ugfaces if not f.deleted]
-    ninternal = len(internal_faces)
+    all_faces = [f for f in ugfaces if not f.deleted]
+    nall = len(all_faces)
     neighbour_faces = [f for f in ugfaces if f.neighbouri != -1 and not f.deleted]
     nneighbour = len(neighbour_faces)
 
     # Generate text string
     text_owner = of_file_header('labelList', 'owner') + "\n"
-    text_owner += str(ninternal + nneighbour) + "\n(\n"
+    text_owner += str(nall) + "\n(\n"
     text_neighbour = of_file_header('labelList', 'neighbour') + "\n"
     text_neighbour += str(nneighbour) + "\n(\n"
 
-    for f in internal_faces:
+    for f in all_faces:
         text_owner += str(f.owneri) + "\n"
     for f in neighbour_faces:
         text_neighbour += str(f.neighbouri) + "\n"
@@ -501,7 +511,7 @@ def update_text_owner_neighbour():
 
     bpy.context.scene.ug_props.text_owner = text_owner
     bpy.context.scene.ug_props.text_neighbour = text_neighbour
-    l.debug("text_owner updated faces: %d" % (ninternal + nneighbour))
+    l.debug("text_owner updated faces: %d" % nall)
     l.debug("text_neighbour updated faces: %d" % nneighbour)
     return None
 
