@@ -387,20 +387,36 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
     bl_idname = "unstructured_grids.export_openfoam_polymesh"
     bl_label = "Export OpenFOAM PolyMesh"
 
-    filename_ext = ".polyMesh"
+    filename_ext = ".polyMesh" # Dummy, required by ExportHelper
     def execute(self, context):
-        obname = "Unstructured Grid"
-        if not obname in bpy.data.objects:
-            self.report({'ERROR'}, "No points/faces were imported")
-            return {'FINISHED'}
-        ob =  bpy.data.objects[obname]
-        update_text_points(ob)
-        update_text_faces()
-        update_text_owner_neighbour()
-        update_text_boundary()
+        ugdata_to_polymesh(self)
         write_polymesh_files(self)
         return {'FINISHED'}
 
+
+class UG_OT_UGToPolyMesh(bpy.types.Operator):
+    '''Generate OpenFOAM PolyMesh file contents from Unstructed Grid data'''
+    bl_idname = "unstructured_grids.ug_to_polymesh"
+    bl_label = "Generate polyMesh texts from UG data"
+
+    def execute(self, context):
+        ugdata_to_polymesh(self)
+        return {'FINISHED'}
+
+
+def ugdata_to_polymesh(self):
+    '''Convert UG data into polymesh text data strings'''
+
+    obname = "Unstructured Grid"
+    if not obname in bpy.data.objects:
+        self.report({'ERROR'}, "No object named %r" % obname)
+        return {'FINISHED'}
+    ob = bpy.data.objects[obname]
+    update_text_points(ob)
+    update_text_faces()
+    update_text_owner_neighbour()
+    update_text_boundary()
+    return None
 
 def update_text_points(ob):
     '''Updates PolyMesh points string contents from Blender object vertices'''

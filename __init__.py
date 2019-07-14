@@ -115,6 +115,7 @@ classes = (
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
+    io_polymesh.UG_OT_UGToPolyMesh,
 )
 
 def register():
