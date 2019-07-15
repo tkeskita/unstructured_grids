@@ -131,14 +131,25 @@ def polymesh_to_ugdata(self):
 
 
 def initialize_ug_object():
-    '''Creates and returns an initialized and empty UG mesh object'''
+    '''Creates and returns an initialized and empty UG mesh object and
+    initializes UG data
+    '''
 
+    # Zero UG data
+    global ugfaces, ugcells, ugboundaries
+    ugfaces = []
+    ugcells = []
+    ugboundaries = []
+
+    # Initialize mesh object
     name = "Unstructured Grid"   
     if name in bpy.data.objects:
         l.debug("Delete existing object " + name)
         bpy.ops.object.select_all(action='DESELECT')
         bpy.data.objects[name].select_set(True)
+        mesh = bpy.data.objects[name].data
         bpy.ops.object.delete()
+        bpy.data.meshes.remove(mesh)
 
     l.debug("Create and activate new mesh object " + name)
     mesh_data = bpy.data.meshes.new(name)
@@ -146,6 +157,7 @@ def initialize_ug_object():
     bpy.context.scene.collection.objects.link(ob)
     bpy.context.view_layer.objects.active = bpy.data.objects[name]
     ob.select_set(True)
+
     return ob
 
 
@@ -172,6 +184,7 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     faces text blocks
     '''
 
+    global ugfaces, ugcells
     edges = [] # List of edge vertex index pairs, to be generated
     faces = [] # List of face vertex index lists, to be generated
     gen_edges = bpy.context.scene.ug_props.generate_internal_edges
@@ -283,6 +296,7 @@ def polymesh_get_list_intlist(text):
 def polymesh_get_boundary(text):
     '''Creates boundary objects from PolyMesh boundary text string'''
 
+    global ugboundaries
     import re
     inside = False # boolean for marking boundary entries in text
 
@@ -304,7 +318,7 @@ def polymesh_get_boundary(text):
         regex = re.search(r'^\s+([\w\%\:\-]+)$', line, re.M)
         if regex:
             patchname = str(regex.group(1))
-            l.debug("Reading in boundary patch definition: %s" % patchname)
+            l.debug("Reading in boundary patch %d: %s" % (len(ugboundaries), patchname))
             patch = UGBoundary(patchname)
             ugboundaries.append(patch)
             continue
@@ -339,19 +353,28 @@ def polymesh_get_boundary(text):
 def apply_materials_to_boundaries(ob):
     '''Sets materials to faces in object ob according to boundary assignments'''
 
+    global ugfaces, ugboundaries
     mati = 0 # Material index
     facecount = 0
 
-    # Delete all materials for a clean slate
-    for mat in bpy.data.materials:
-        bpy.data.materials.remove(mat)
+    # Clear object's material slots - not needed but this should do it:
+    # for i in range(len(ob.material_slots)):
+    #    ob.active_material_index = i
+    #    bpy.ops.object.material_slot_select()
+    #    bpy.ops.object.material_slot_remove()
 
     # Process each boundary
     for b in ugboundaries:
         # Create new material if needed
         l.debug("Material for %s: %d" % (b.patchname, mati))
-        mat = bpy.data.materials.new(name=b.patchname)
-        ob.data.materials.append(mat)
+        if b.patchname in bpy.data.materials:
+            mat = bpy.data.materials[b.patchname]
+        else:
+            mat = bpy.data.materials.new(name=b.patchname)
+
+        # Create new material slot to object and set material
+        bpy.ops.object.material_slot_add()
+        ob.active_material = mat
         ob.data.materials[mati].diffuse_color = get_face_color(mati)
 
         # Set material index to ugfaces
@@ -450,6 +473,7 @@ def update_text_faces():
         Return text and number of internal faces.
         '''
 
+        global ugfaces, ugcells
         text = ''
         ind = 0 # face index
         celli = 0 # cell index
@@ -478,6 +502,7 @@ def update_text_faces():
         Return text and number of internal faces.
         '''
 
+        global ugfaces, ugboundaries
         text = ''
         mati = 0 # material index
         for b in ugboundaries:
@@ -506,6 +531,7 @@ def update_text_faces():
 def update_text_owner_neighbour():
     '''Updates PolyMesh owner and neighbour text string contents from UG data'''
 
+    global ugfaces
     all_faces = [f for f in ugfaces if not f.deleted]
     nall = len(all_faces)
     neighbour_faces = [f for f in ugfaces if f.neighbouri != -1 and not f.deleted]
@@ -535,6 +561,7 @@ def update_text_owner_neighbour():
 def update_text_boundary():
     '''Updates PolyMesh boundary text string contents from UG data'''
 
+    global ugfaces, ugboundaries
     i = 0 # Boundary patch number
     btext = '' # generated boundary entries
     nboundaries = 0 # number of boundaries
