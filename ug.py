@@ -54,7 +54,7 @@ class UGFace:
         self.verts = verts
 
 ugfaces = [] # global list of all UGFaces
-
+ugboundaryfaces = [] # global short list of boundary UGFaces only
 
 class UGBoundary:
     '''Class for Unstructured Grid patch (boundary face) objects'''
@@ -75,11 +75,13 @@ ugboundaries = [] # global list of all UGBoundaries
 
 
 def get_ugface_from_polygon(p):
-    '''Returns UGFace matching argument mesh face polygon p'''
+    '''Returns UGFace matching argument mesh face polygon p.
+    Assumes polygon represents a boundary face (not internal face).
+    '''
 
     numverts = len(p.vertices)
     pv0 = p.vertices[0] # first vertex index
-    vertfaces = [f for f in ugfaces if p.vertices[0] in f.verts]
+    vertfaces = [f for f in ugboundaryfaces if p.vertices[0] in f.verts]
 
     # Find match for all vertices
     for f in vertfaces:

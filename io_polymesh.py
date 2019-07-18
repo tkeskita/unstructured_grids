@@ -474,6 +474,15 @@ def update_ugdata_and_text_faces(ob):
     accordingly to material assignments.
     '''
 
+    def update_ugboundaryfaces():
+        '''Regenerates list of boundary faces from ugfaces'''
+        ug.ugboundaryfaces = []
+        for f in ug.ugfaces:
+            if f.deleted:
+                continue
+            if f.neighbouri == -1:
+                ug.ugboundaryfaces.append(f)
+
     def gen_line(verts):
         '''Construct face definition text line from verts list'''
         line = str(len(verts)) + "("
@@ -549,6 +558,7 @@ def update_ugdata_and_text_faces(ob):
                 ind += 1
         return text, ind
 
+    update_ugboundaryfaces()
     text_internal, i = internal_face_pass()
     l.debug("text_faces updated internal faces: %d", i)
     text_boundary, i = boundary_face_pass(i, ob)
