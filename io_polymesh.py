@@ -192,15 +192,15 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     neighbour = polymesh_get_intlist(text_neighbour)
     face_verts = polymesh_get_list_intlist(text_faces)
 
-    # Populate list of Ug.Ugcells
+    # Populate list of ugcells
     for i in range(max(owner) + 1):
-        # Add new entry to list of Ug.Ugcells
+        # Add new entry to list of ugcells
         ugcell = ug.UGCell(i)
         ug.ugcells.append(ugcell)
 
     # Create faces at boundary and only edges for internal faces
     for i in range(len(face_verts)):
-        # Add to list of Ug.Ugfaces
+        # Add to list of ugfaces
         ugface = ug.UGFace(i, face_verts[i])
         ug.ugfaces.append(ugface)
         # Add owner cell index
@@ -432,7 +432,7 @@ def ugdata_to_polymesh(self):
         return {'FINISHED'}
     ob = bpy.data.objects[obname]
     update_text_points(ob)
-    update_text_faces(ob)
+    update_ugdata_and_text_faces(ob)
     update_text_owner_neighbour()
     update_text_boundary()
     return None
@@ -453,8 +453,26 @@ def update_text_points(ob):
     return None
 
 
-def update_text_faces(ob):
-    '''Updates PolyMesh faces text string contents from UG data for object ob'''
+def update_ugdata_and_text_faces(ob):
+    '''Updates UG data (properties of ugcells, ugfaces and ugboundaries)
+    and generates PolyMesh faces text string contents for object ob.
+    UGFace indexing is updated from current Blender face material
+    assignments, but otherwise it is assumed that UG data is up-to-date.
+    Update is done in two phases, at the same time as face text
+    definitions are generated:
+
+    1. internal face pass:
+
+    Generates cell indices according to PolyMesh requirement that
+    face normal points from lower cell index to higher cell index.
+    Face normal is determined by right hand rule from vertex list.
+
+    2. boundary face pass:
+
+    Update boundary list to conform to current object material slot
+    and face material assignments. Boundary faces are numbered
+    accordingly to material assignments.
+    '''
 
     def gen_line(verts):
         '''Construct face definition text line from verts list'''
@@ -505,6 +523,7 @@ def update_text_faces(ob):
 
         for sloti in range(len(ob.material_slots)):
             mat = ob.material_slots[sloti]
+            l.debug("Processing patch " + mat.name)
 
             # Find or create UGBoundary for material in this slot
             patch = [b for b in ug.ugboundaries if b.patchname == mat.name][0]
