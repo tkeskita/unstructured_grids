@@ -20,6 +20,9 @@
 
 # Core classes and routines for Unstructured Grids
 
+import logging
+l = logging.getLogger(__name__)
+
 class UGCell:
     '''Class for Unstructured Grid cell data objects'''
 
@@ -62,9 +65,31 @@ class UGBoundary:
     inGroups = '' # name for patch group this patch is part of
     nFaces = 0 # number of faces in patch
     startFace = -1 # index to first face for this patch
+    mati = -1 # boundary patch (object material slot) index number
 
     def __init__(self, patchname):
         '''Initialize UGBoundary with name patchname'''
         self.patchname = patchname
 
 ugboundaries = [] # global list of all UGBoundaries
+
+
+def get_ugface_from_polygon(p):
+    '''Returns UGFace matching argument mesh face polygon p'''
+
+    numverts = len(p.vertices)
+    pv0 = p.vertices[0] # first vertex index
+    vertfaces = [f for f in ugfaces if p.vertices[0] in f.verts]
+
+    # Find match for all vertices
+    for f in vertfaces:
+        n = 0
+        for vi in p.vertices:
+            if vi in f.verts:
+                n += 1
+        if n == numverts:
+            return f
+
+    verts = [i for i in p.vertices]
+    l.debug("No face found with verts " + str(verts))
+    return None
