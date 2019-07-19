@@ -524,6 +524,7 @@ def update_ugdata_and_text_faces(ob):
         Return text and number of internal faces.
         '''
 
+        startind = ind # Face index for start of boundary faces
         text = ''
 
         # Mark all boundaries as deleted
@@ -550,7 +551,9 @@ def update_ugdata_and_text_faces(ob):
             patch.nFaces = len(faces)
 
             for p in faces:
-                ugface = ug.get_ugface_from_polygon(p)
+                # ugface = ug.get_ugface_from_polygon(p) # Too slow
+                # Map face to ugface by face index (requires sync!)
+                ugface = ug.ugfaces[startind + p.index]
                 # Update face properties, generate text and increase face index
                 ugface.mati = sloti
                 ugface.facei = ind
