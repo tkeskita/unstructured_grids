@@ -572,10 +572,12 @@ def update_ugdata_and_text_faces(ob):
             l.debug("Processing patch " + mat.name)
 
             # Find or create UGBoundary for material in this slot
-            patch = [b for b in ug.ugboundaries if b.patchname == mat.name][0]
-            if not patch:
+            patchlist = [b for b in ug.ugboundaries if b.patchname == mat.name]
+            if not patchlist:
                 patch = ug.UGBoundary(mat.name)
                 ug.ugboundaries.append(patch)
+            else:
+                patch = patchlist[0]
 
             # Update boundary properties
             patch.deleted = False
