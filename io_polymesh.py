@@ -83,15 +83,18 @@ def polymesh_boundary_ingroup_fix():
 
     inside = False # boolean for marking boundary entries in text
     result = ''
+    rec1 = re.compile(r'^\s*inGroups\s*$', re.M)
+    rec2 = re.compile(r'\;', re.M)
+
     for line in text.splitlines():
-        regex = re.search(r'^\s*inGroups\s*$', line, re.M)
+        regex = rec1.search(line)
         if regex:
             # Initialize
             inside = True
             res = "        inGroups        "
         elif inside:
             res += line + ' '
-            regex = re.search(r'\;', line, re.M)
+            regex = rec2.search(line)
             if regex:
                 # Reached end of inGroup
                 inside = False
@@ -166,8 +169,9 @@ def polymesh_get_verts(text):
     import re
     verts = [] # list of x, y, z point coordinate triplets
 
+    rec = re.compile(r'^\(([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\)', re.M)
     for line in text.splitlines():
-        regex = re.search(r'^\(([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\s+([dDeE\d\.\-]+)\)', line, re.M)
+        regex = rec.search(line)
         if regex:
             x = float(regex.group(1))
             y = float(regex.group(2))
@@ -191,12 +195,16 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     owner = polymesh_get_intlist(text_owner)
     neighbour = polymesh_get_intlist(text_neighbour)
     face_verts = polymesh_get_list_intlist(text_faces)
+    print_interval = 100000 # Print progress every print_interval faces
 
     # Populate list of ugcells
     for i in range(max(owner) + 1):
         # Add new entry to list of ugcells
         ugcell = ug.UGCell(i)
         ug.ugcells.append(ugcell)
+
+        if i % print_interval == 0:
+            l.debug("Processed cell count: %d" % i)
 
     # Create faces at boundary and only edges for internal faces
     for i in range(len(face_verts)):
@@ -223,6 +231,9 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
             # Boundary face, add faces
             faces.append(tuple(face_verts[i]))
 
+        if i % print_interval == 0:
+            l.debug("Processed face count: %d" % i)
+
     l.debug("Number of edge index pairs generated: %d" % len(edges))
     l.debug("Number of boundary face index lists generated: %d" % len(faces))
 
@@ -236,19 +247,23 @@ def polymesh_get_intlist(text):
     iList = [] # list of integers to be generated
     inside = False # boolean for marking integer list in text
 
+    rec1 = re.compile(r'^\(', re.M)
+    rec2 = re.compile(r'^\)', re.M)
+    rec3 = re.compile(r'^(\d+)', re.M)
+
     for line in text.splitlines():
         # Opening of integer list by single parenthesis
-        regex = re.search(r'^\(', line, re.M)
+        regex = rec1.search(line)
         if regex:
             inside = True
 
         # Closing of integer list by single parenthesis
-        regex2 = re.search(r'^\)', line, re.M)
+        regex2 = rec2.search(line)
         if regex2:
             inside = False
 
         # Integer, at start of line
-        regex3 = re.search(r'^(\d+)', line, re.M)
+        regex3 = rec3.search(line)
         if inside and regex3:
             iList.append(int(regex3.group(1)))
 
@@ -267,19 +282,23 @@ def polymesh_get_list_intlist(text):
     iList = [] # list of integers lists to be generated
     inside = False # boolean for marking integer list in text
 
+    rec1 = re.compile(r'^\(', re.M)
+    rec2 = re.compile(r'^\)', re.M)
+    rec3 = re.compile(r'^\d+\(([\d\s]+)\)', re.M)
+
     for line in text.splitlines():
         # Opening of integer list by single parenthesis
-        regex = re.search(r'^\(', line, re.M)
+        regex = rec1.search(line)
         if regex:
             inside = True
 
         # Closing of integer list by single parenthesis
-        regex2 = re.search(r'^\)', line, re.M)
+        regex2 = rec2.search(line)
         if regex2:
             inside = False
 
         # List of integer list within parenthesis
-        regex3 = re.search(r'^\d+\(([\d\s]+)\)', line, re.M)
+        regex3 = rec3.search(line)
         if inside and regex3:
             vals = regex3.group(1).split()
             valList = []
@@ -297,22 +316,30 @@ def polymesh_get_boundary(text):
     import re
     inside = False # boolean for marking boundary entries in text
 
+    rec1 = re.compile(r'^\(', re.M)
+    rec2 = re.compile(r'^\)', re.M)
+    rec3 = re.compile(r'^\s+([\w\%\:\-]+)$', re.M)
+    rec4 = re.compile(r'^\s+type\s+(\w+)\;$', re.M)
+    rec5 = re.compile(r'^\s+inGroups\s+([\w\s\(\)]+)\;\s*$', re.M)
+    rec6 = re.compile(r'^\s+nFaces\s+(\d+)\;$', re.M)
+    rec7 = re.compile(r'^\s+startFace\s+(\d+)\;$', re.M)
+
     for line in text.splitlines():
         # Opening of integer list by single parenthesis
-        regex = re.search(r'^\(', line, re.M)
+        regex = rec1.search(line)
         if regex:
             inside = True
 
         # Closing of integer list by single parenthesis
-        regex2 = re.search(r'^\)', line, re.M)
-        if regex2:
+        regex = rec2.search(line)
+        if regex:
             inside = False
 
         if not inside:
             continue
 
         # New entry is a word (with possibly special characters) on its own line
-        regex = re.search(r'^\s+([\w\%\:\-]+)$', line, re.M)
+        regex = rec3.search(line)
         if regex:
             patchname = str(regex.group(1))
             l.debug("Reading in boundary patch %d: %s" % (len(ug.ugboundaries), patchname))
@@ -321,25 +348,25 @@ def polymesh_get_boundary(text):
             continue
 
         # type
-        regex = re.search(r'^\s+type\s+(\w+)\;$', line, re.M)
+        regex = rec4.search(line)
         if regex:
             patch.typename = str(regex.group(1))
             continue
 
         # inGroups
-        regex = re.search(r'^\s+inGroups\s+([\w\s\(\)]+)\;\s*$', line, re.M)
+        regex = rec5.search(line)
         if regex:
             patch.inGroups = str(regex.group(1))
             continue
 
         # nFaces
-        regex = re.search(r'^\s+nFaces\s+(\d+)\;$', line, re.M)
+        regex = rec6.search(line)
         if regex:
             patch.nFaces = int(regex.group(1))
             continue
 
         # startFace
-        regex = re.search(r'^\s+startFace\s+(\d+)\;$', line, re.M)
+        regex = rec7.search(line)
         if regex:
             patch.startFace = int(regex.group(1))
             continue
