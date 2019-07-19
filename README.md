@@ -13,16 +13,33 @@ Since volume meshes are not natively supported in Blender, it is
 currently unknown how usable Blender can become for unstructured
 grids.
 
-This add-on is currently at proof-of-concept stage and work in progress.
-
 ## Idea Description
 
 - Cell and face information related to unstructured grids are kept in
-  separate Python object data model
+  separate Python object data model and stored as text strings
 
-- Besides moving of vertices, modifications of unstructured grids
+- Cell description is compatible with
+  [OpenFOAM PolyMesh description](https://cfd.direct/openfoam/user-guide/v7-mesh-description/),
+  which describes unstructured grid by lists of cells, cell faces and face vertices
+
+- Besides moving of vertices and assigning of boundary faces to materials
+  corresponding to boundary patches, modifications of unstructured grids
   rely on special operator which keep data model and Blender mesh
   object contents in sync
 
-- UG should support OpenFOAM PolyMesh features. Work is started by
-  implementing PolyMesh import and export functions.
+## Status
+
+This add-on is currently at proof-of-concept stage and work in progress.
+Currently implemented features include:
+
+- Import and Export of PolyMesh files (boundary, faces, neighbour, owner, points)
+
+- Storage of unstructured grid data as strings inside Blend files
+
+- Boundary face patches can be changed by assigning material for faces
+
+### OpenFOAM Trade Mark Notice
+
+This offering is not approved or endorsed by OpenCFD Limited, producer
+and distributor of the OpenFOAM software via www.openfoam.com, and
+owner of the OPENFOAM® and OpenCFD® trade marks.

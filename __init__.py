@@ -43,6 +43,7 @@ else:
         ug,
         io_polymesh,
         )
+    from bpy.app.handlers import persistent
 
 # Set up logging of messages using Python logging
 # Logging is nicely explained in:
@@ -110,6 +111,28 @@ def menu_export(self, context):
                          text="OpenFOAM PolyMesh (UG)"
     )
 
+@persistent
+def load_handler(dummy):
+    '''Updates UG data from string variables after loading Blend file'''
+
+    ug_props = bpy.context.scene.ug_props
+    if len(ug_props.text_points) == 0:
+        return None
+    l.debug("Executing load_post handler")
+    bpy.ops.unstructured_grids.polymesh_to_ug()
+
+@persistent
+def save_handler(dummy):
+    '''Updates string variables from UG data before saving Blend file'''
+
+    ug_props = bpy.context.scene.ug_props
+    if len(ug.ugcells) == 0:
+        return None
+    l.debug("Executing pre_save handler")
+    bpy.ops.unstructured_grids.ug_to_polymesh()
+
+
+
 classes = (
     UGProperties,
     io_polymesh.UG_OT_ImportPolyMesh,
@@ -128,12 +151,18 @@ def register():
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
 
+    bpy.app.handlers.load_post.append(load_handler)
+    bpy.app.handlers.save_pre.append(save_handler)
+
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
+
+    bpy.app.handlers.load_post.remove(load_handler)
+    bpy.app.handlers.save_pre.remove(save_handler)
 
 if __name__ == "__main__":
     register()

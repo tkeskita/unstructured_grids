@@ -33,6 +33,10 @@ from . import ug
 import logging
 l = logging.getLogger(__name__)
 
+# Global variables
+obname = "Unstructured Grid" # Name for the unstructure grid object
+
+
 ##### IMPORT #####
 
 class UG_OT_ImportPolyMesh(bpy.types.Operator, ImportHelper):
@@ -121,8 +125,11 @@ def polymesh_to_ugdata(self):
     into UG data structures and Blender mesh
     '''
 
-    ob = initialize_ug_object()
     ug_props = bpy.context.scene.ug_props
+    if len(ug_props.text_points) == 0:
+        return None
+
+    ob = initialize_ug_object()
     verts = polymesh_get_verts(ug_props.text_points)
     [edges, faces] = polymesh_get_faces( \
         ug_props.text_owner, ug_props.text_neighbour, ug_props.text_faces)
@@ -144,20 +151,19 @@ def initialize_ug_object():
     ug.ugboundaries = []
 
     # Initialize mesh object
-    name = "Unstructured Grid"   
-    if name in bpy.data.objects:
-        l.debug("Delete existing object " + name)
+    if obname in bpy.data.objects:
+        l.debug("Delete existing object " + obname)
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.data.objects[name].select_set(True)
-        mesh = bpy.data.objects[name].data
+        bpy.data.objects[obname].select_set(True)
+        mesh = bpy.data.objects[obname].data
         bpy.ops.object.delete()
         bpy.data.meshes.remove(mesh)
 
-    l.debug("Create and activate new mesh object " + name)
-    mesh_data = bpy.data.meshes.new(name)
-    ob = bpy.data.objects.new(name, mesh_data)
+    l.debug("Create and activate new mesh object " + obname)
+    mesh_data = bpy.data.meshes.new(obname)
+    ob = bpy.data.objects.new(obname, mesh_data)
     bpy.context.scene.collection.objects.link(ob)
-    bpy.context.view_layer.objects.active = bpy.data.objects[name]
+    bpy.context.view_layer.objects.active = bpy.data.objects[obname]
     ob.select_set(True)
 
     return ob
@@ -453,7 +459,10 @@ class UG_OT_UGToPolyMesh(bpy.types.Operator):
 def ugdata_to_polymesh(self):
     '''Convert UG data into polymesh text data strings'''
 
-    obname = "Unstructured Grid"
+    ug_props = bpy.context.scene.ug_props
+    if len(ug.ugcells) == 0:
+        return None
+
     if not obname in bpy.data.objects:
         self.report({'ERROR'}, "No object named %r" % obname)
         return {'FINISHED'}
