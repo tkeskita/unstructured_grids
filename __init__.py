@@ -135,6 +135,7 @@ def save_handler(dummy):
 
 classes = (
     UGProperties,
+    ug.UG_OT_UpdateBoundariesFromFaceMaterials,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
@@ -166,5 +167,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
-
