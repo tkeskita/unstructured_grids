@@ -138,7 +138,7 @@ def polymesh_to_ugdata(self):
     ob.data.from_pydata(verts, edges, faces)
     ob.data.validate()
     apply_materials_to_boundaries(ob)
-
+    bpy.ops.unstructured_grids.update_ugboundaries()
 
 def polymesh_get_verts(text):
     '''Creates list of vertex triplets from PolyMesh points text string'''
@@ -521,25 +521,42 @@ def update_ei_and_text_faces(ob):
         text = ''
         fei = 0 # face export index
         cei = 0 # cell export index
+        export_ugfaces = [] # list of ugfaces in export order
         owneri = [] # owner cell index list
         neighbouri = [] # neighbour cell index list
 
-        faces = [f for f in ug.ugfaces if f.neighbour and not f.deleted]
-        for f in faces:
-            f.ei = fei # Set face index
-            text += gen_line(f.ugverts) # Add definition line and proceed
+        # Go through each internal face of cells and number cells and
+        # internal faces
+        # TODO: Order ugcells so that next cell is always a neighbour for
+        # at least one previous cell. That would make sure that there will
+        # be no "Faces not in upper triangular order" errors with this algo.
+        # Or is it easy to ensure that in modification operators?
+        # For now this "cell neighbour order" is assumed to hold.
+        for c in ug.ugcells:
+            if c.deleted:
+                continue
+            c.ei = cei # Set cell index
+            for f in c.ugfaces:
+                if f.deleted:
+                    continue
+                if not f.neighbour:
+                    continue
+                if f.owner == c and f.neighbour.ei != -1:
+                    # This leads to "Faces not in upper triangular order" errors
+                    l.warning("Face normal should be mirrored for face ei %d" % f.ei)
+                if f.ei != -1:
+                    continue
+                export_ugfaces.append(f)
+                f.ei = fei # Set face index
+                text += gen_line(f.ugverts) # Add definition line and proceed
+                fei += 1
+            cei += 1
 
-            # Set cell indices if needed
-            if f.owner.ei == -1:
-                f.owner.ei = cei
-                cei += 1
-            if f.neighbour.ei == -1:
-                f.neighbour.ei = cei
-                cei += 1
-            # Append owner and neighbour indices
+        # Update owner and neighbour index lists
+        for f in export_ugfaces:
             owneri.append(f.owner.ei)
             neighbouri.append(f.neighbour.ei)
-            fei += 1
+
         return text, fei, owneri, neighbouri
 
     def boundary_face_pass(fei, ob, owneri):
