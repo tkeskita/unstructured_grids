@@ -513,9 +513,9 @@ def update_ei_and_text_faces(ob):
         for f in ug.ugfaces:
             f.ei = -1
 
-    def internal_face_pass():
-        '''Generate face definition text for internal faces.
-        Return text and number of internal faces.
+    def internal_face_pass(clist):
+        '''Generate face definition text for internal faces from
+        argument cell list clist.
         '''
 
         text = ''
@@ -527,14 +527,7 @@ def update_ei_and_text_faces(ob):
 
         # Go through each internal face of cells and number cells and
         # internal faces
-        # TODO: Order ugcells so that next cell is always a neighbour for
-        # at least one previous cell. That would make sure that there will
-        # be no "Faces not in upper triangular order" errors with this algo.
-        # Or is it easy to ensure that in modification operators?
-        # For now this "cell neighbour order" is assumed to hold.
-        for c in ug.ugcells:
-            if c.deleted:
-                continue
+        for c in clist:
             c.ei = cei # Set cell index
             for f in c.ugfaces:
                 if f.deleted:
@@ -583,11 +576,16 @@ def update_ei_and_text_faces(ob):
                 fei += 1
         return text, fei, owneri
 
+    # Initialize
+    ordered_ugcells = ug.order_ugcells()
     reset_ei()
-    text_internal, i, owneri, neighbouri = internal_face_pass()
+
+    # Internal pass
+    text_internal, i, owneri, neighbouri = internal_face_pass(ordered_ugcells)
     l.debug("text_faces updated internal faces: %d", i)
     ug.ifaces0 = i # Update internal face count
 
+    # Boundary pass
     text_boundary, i, owneri = boundary_face_pass(i, ob, owneri)
     l.debug("text_faces updated total number of faces: %d", i)
 
