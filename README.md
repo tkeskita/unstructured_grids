@@ -6,16 +6,15 @@ Unstructured Grids (UG) is an add-on for [Blender
 2.8](https://www.blender.org/2-8) for importing, editing and exporting
 of 3D volume meshes composed of arbitrary polyhedron cells
 (a.k.a [unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
-The aim is to create a tool that can be used for minor editing of
-unstructured grids (like moving vertices, and assigning boundary faces
-to named patches) and possibly some special meshing cases.
-Since volume meshes are not natively supported in Blender, it is
-currently unknown how usable Blender can become for unstructured
-grids.
+This tool can be used for editing of unstructured grids 
+(like moving vertices, and assigning boundary faces
+to named patches).
+
 
 ## Idea Description
 
-- Cell and face information related to unstructured grids are kept in
+- Since volume meshes are not natively supported in Blender, 
+  cell and face information related to unstructured grids are kept in
   separate Python object data model and stored as text strings
 
 - Cell description is compatible with
@@ -24,8 +23,26 @@ grids.
 
 - Besides moving of vertices and assigning of boundary faces to materials
   corresponding to boundary patches, modifications of unstructured grids
-  rely on special operator which keep data model and Blender mesh
+  rely on special operators which keep data model and Blender mesh
   object contents in sync
+
+
+## Use Case Examples
+
+- Change boundary patch assignments for existing/new patches (select
+  faces in Blender, then assign selection to existing/new
+  material).
+
+- Moving of vertices. This can be applied for tasks like:
+  
+  - Elongation/stretching of cells (by using Proportional Editing in
+    Blender)
+
+  - Curving simulation domain, to model e.g. pipes (by appying Curve
+    Modifier in Blender)
+
+  - Scaling/moving/rotation of a selected part of the mesh
+
 
 ## Status
 
@@ -37,6 +54,22 @@ Currently implemented features include:
 - Storage of unstructured grid data as strings inside Blend files
 
 - Boundary face patches can be changed by assigning material for faces
+
+
+## Development Ideas for Future
+
+- Selection of cells
+
+- Deletion of selected cells to carve voids into the domain
+
+- Extrusion of new cells (one or several layers) from selected faces
+
+- Subdivision of cells to produce smaller cells
+
+- Merge selected cells
+
+- Import/export of VTK Unstructured Grids
+
 
 ### OpenFOAM Trade Mark Notice
 
