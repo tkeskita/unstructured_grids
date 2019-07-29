@@ -66,6 +66,16 @@ class UGFace:
         ugfaces.append(self)
 
 
+    def invert_face_dir(self):
+        '''Invert face directions. Swaps face owner and neighbour cells
+        and inverts face ugverts to mirror face normal vector.
+        '''
+        c = self.owner
+        self.owner = self.neighbour
+        self.neighbour = c
+        self.ugverts = list(reversed(self.ugverts))
+
+
 class UGVertex:
     '''Class for Unstructured Grid vertex data object'''
 
@@ -205,11 +215,73 @@ def get_next_undeleted_cell(clist, ind):
     return None, None
 
 
-def order_ugcells():
-    '''Return list of ugcells ordered so that each cell is neighbour to
+def order_ugcells_by_BFS():
+    '''Breadth-first search (BFS) algorithm to sort cells. See
+    https://en.wikipedia.org/wiki/Breadth-first_search.
+    Return list of ugcells ordered so that each cell is neighbour to
     at least one of the previous cells. Ordered cell list is used
     for exporting UG data to ensure that cell editing result is
-    one closed region and to order faces and cells.
+    a single closed region and to order faces and cells.
+
+    Note: This function uses UGFace.ei to track processed faces.
+    '''
+
+    from collections import deque
+
+    # Initialize
+    print_interval = 1000 # Debug print progress interval
+    i = 0 # Number of processed cells
+    d = deque() # deque of cells to be processed
+    clist = [] # ordered list of cells, to be generated here
+
+    # Initialize face ei to -1 (0 will mark processed face)
+    for f in ugfaces:
+        f.ei = -1
+
+    # Start from first undeleted cell
+    for c in ugcells:
+        if not c.deleted:
+            d.append(c)
+            break
+
+    # Process cells in deque
+    while (len(d) > 0):
+        # Get last unprocessed cell and add to list
+        c = d.popleft()
+        clist.append(c)
+        if fulldebug: l.debug("Processing cell %d", c.ii)
+
+        # Go through all cell faces:
+        for f in c.ugfaces:
+            # Skip boundary faces
+            if not f.neighbour:
+                continue
+            # Skip processed faces
+            if f.ei == 0:
+                continue
+            # Make c owner of face
+            if f.neighbour == c:
+                f.invert_face_dir()
+            # Add cell arcross unprocessed face to deque unless already there
+            if not f.neighbour in d:
+                d.append(f.neighbour)
+            # Mark face as processed
+            f.ei = 0
+
+        if i % print_interval == 0:
+            l.debug("Ordered cells: %d" % i)
+        i += 1
+
+    l.debug("Total ordered cells: %d" % (i-1))
+    return clist
+
+
+def order_ugcells_by_internal_face_search():
+    '''An ad-hoc internal face search algorithm to sort cells.
+    Return list of ugcells ordered so that each cell is neighbour to
+    at least one of the previous cells. Ordered cell list is used
+    for exporting UG data to ensure that cell editing result is
+    a single closed region and to order faces and cells.
 
     Note: This function uses UGCell.ei to store number of unprocessed
     neighbour cells, to track which cells to include next in the list.

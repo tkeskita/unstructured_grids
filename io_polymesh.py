@@ -576,8 +576,10 @@ def update_ei_and_text_faces(ob):
                 fei += 1
         return text, fei, owneri
 
-    # Initialize
-    ordered_ugcells = ug.order_ugcells()
+    # Ordering of cells and initialization
+    #ordered_ugcells = ug.order_ugcells_by_internal_face_search() # Very slow
+    #ordered_ugcells = ug.order_ugcells_by_BFS() # Somewhat slow
+    ordered_ugcells = ug.ugcells # No ordering of cells, no guarantee of single region
     reset_ei()
 
     # Internal pass
