@@ -138,7 +138,7 @@ def polymesh_to_ugdata(self):
     ob.data.from_pydata(verts, edges, faces)
     ob.data.validate()
     apply_materials_to_boundaries(ob)
-    bpy.ops.unstructured_grids.update_ugboundaries()
+    ug.update_ugboundaries()
 
 def polymesh_get_verts(text):
     '''Creates list of vertex triplets from PolyMesh points text string'''
@@ -417,6 +417,7 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
 
     filename_ext = ".polyMesh" # Dummy, required by ExportHelper
     def execute(self, context):
+        ug.update_ugboundaries()
         ugdata_to_polymesh(self)
         write_polymesh_files(self)
         return {'FINISHED'}
