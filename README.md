@@ -9,7 +9,8 @@ Unstructured Grids (UG) is an add-on for [Blender
 of 3D volume meshes composed of arbitrary polyhedron cells
 (a.k.a [3D unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
 Editing includes tasks like moving of selected vertices, and assigning selected
-boundary faces to named patches.
+boundary faces to named patches. The user of the add-on is assumed to know
+Blender modelling and material systems on a basic level.
 
 
 ## Features and Limitations
