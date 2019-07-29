@@ -1,5 +1,7 @@
 # Unstructured Grids Add-on for Blender
 
+<p align="left"><img src="examples/ug_title.png"></p>
+
 ## Introduction
 
 Unstructured Grids (UG) is an add-on for [Blender
@@ -33,6 +35,8 @@ to named patches).
   faces in Blender, then assign selection to existing/new
   material).
 
+<p align="left"><img src="examples/ug_boundary_patch_assign.png"></p>
+
 - Moving of vertices. This can be applied for tasks like:
   
   - Elongation/stretching of cells (by using Proportional Editing in
@@ -40,6 +44,8 @@ to named patches).
 
   - Curving simulation domain, to model e.g. pipes (by appying Curve
     Modifier in Blender)
+
+<p align="left"><img src="examples/ug_stretch_and_bend.png"></p>
 
   - Scaling/moving/rotation of a selected part of the mesh
 
