@@ -115,6 +115,8 @@ def initialize_ug_object():
     initializes UG data
     '''
 
+    global ugverts, ugfaces, ugcells, ugboundaries
+
     # Zero UG data
     ugverts = []
     ugfaces = []
