@@ -5,7 +5,7 @@
 ## Introduction
 
 Unstructured Grids (UG) is an add-on for [Blender
-2.8](https://www.blender.org/2-8) for importing, editing and exporting
+2.80](https://www.blender.org) for importing, editing and exporting
 of 3D volume meshes composed of arbitrary polyhedron cells
 (a.k.a [3D unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
 Editing includes tasks like moving of selected vertices, and assigning selected

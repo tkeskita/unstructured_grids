@@ -157,10 +157,10 @@ def polymesh_get_verts(text):
             verts.append(tuple([x, y, z]))
             ug.UGVertex(i)
             if i % print_interval == 0:
-                l.debug("Created vertex count: %d" % i)
+                l.debug("... processed vertex count: %d" % i)
             i += 1
 
-    l.debug("Number of coordinate triplets read: %d" % len(verts))
+    l.debug("Number of vertices read: %d" % len(verts))
     return verts
 
 
@@ -175,15 +175,21 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
     # Read in owner and neighbour lists
     owner = polymesh_get_intlist(text_owner)
+    l.debug("Number of faces that have owner: %d" % len(owner))
     neighbour = polymesh_get_intlist(text_neighbour)
+    l.debug("Number of faces that have neighbour: %d" % len(neighbour))
+    l.debug("Number of owner minus neighbour: %d" % (len(owner) - len(neighbour)))
     face_verts = polymesh_get_list_intlist(text_faces)
+    l.debug("Number of face definitions: %d" % len(face_verts))
+
 
     # Populate list of ugcells
-    for i in range(max(owner) + 1):
+    for i in range(max(max(owner), max(neighbour)) + 1):
         # Add new UGCcell
         ug.UGCell()
         if i % print_interval == 0:
-            l.debug("Created cell count: %d" % i)
+            l.debug("... processed cell count: %d" % i)
+    l.debug("Final cell count: %d" % i)
 
     # Create faces at boundary and only edges for internal faces
     for i in range(len(face_verts)):
@@ -211,10 +217,11 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
             faces.append(tuple(face_verts[i]))
 
         if i % print_interval == 0:
-            l.debug("Processed face count: %d" % i)
+            l.debug("... processed face count: %d" % i)
+    l.debug("Final face count: %d" % i)
 
-    l.debug("Number of edge index pairs generated: %d" % len(edges))
-    l.debug("Number of boundary face index lists generated: %d" % len(faces))
+    l.debug("Number of edge definitions: %d" % len(edges))
+    l.debug("Number of face definitions: %d" % len(faces))
 
     return edges, faces
 
@@ -246,7 +253,6 @@ def polymesh_get_intlist(text):
         if inside and regex3:
             iList.append(int(regex3.group(1)))
 
-    l.debug("Number of integers read: %d" % len(iList))
     return iList
 
 
@@ -285,7 +291,6 @@ def polymesh_get_list_intlist(text):
                 valList.append(int(val))
             iList.append(valList)
 
-    l.debug("Number of integer lists read: %d" % len(iList))
     return iList
 
 
@@ -299,7 +304,7 @@ def polymesh_get_boundary(text):
     rec2 = re.compile(r'^\)', re.M)
     rec3 = re.compile(r'^\s+([\w\%\:\-\.]+)$', re.M)
     rec4 = re.compile(r'^\s+type\s+(\w+)\;$', re.M)
-    rec5 = re.compile(r'^\s+inGroups\s+([\w\s\(\)]+)\;\s*$', re.M)
+    rec5 = re.compile(r'^\s+inGroups\s+([\w\s\(\)\<\>]+)\;\s*$', re.M)
     rec6 = re.compile(r'^\s+nFaces\s+(\d+)\;$', re.M)
     rec7 = re.compile(r'^\s+startFace\s+(\d+)\;$', re.M)
 
