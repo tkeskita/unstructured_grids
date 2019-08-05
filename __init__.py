@@ -36,12 +36,14 @@ if "bpy" in locals():
     import importlib
     importlib.reload(ug)
     importlib.reload(io_polymesh)
+    importlib.reload(ug_op)
 else:
     import math
     import bpy
     from . import(
         ug,
         io_polymesh,
+        ug_op,
         )
     from bpy.app.handlers import persistent
 
@@ -140,6 +142,7 @@ classes = (
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
     io_polymesh.UG_OT_UGToPolyMesh,
+    ug_op.UG_OT_Select_Cells_Inclusive,
 )
 
 def register():

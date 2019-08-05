@@ -82,10 +82,12 @@ class UGVertex:
     deleted = False # boolean for marking deleted vertex
     bi = -1 # Blender vertex index corresponding to this UGVertex
     ei = -1 # Vertex index (used at export only)
+    ugcells = [] # List of ugcells that this vertex is part of
 
     def __init__(self, i):
-        '''Initialize UGFace with vertex index'''
+        '''Initialize UGVertex with vertex index'''
         self.bi = i
+        self.ugcells = []
         ugverts.append(self)
 
 

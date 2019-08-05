@@ -19,8 +19,35 @@
 # <pep8 compliant>
 
 # Input/Output routines for OpenFOAM PolyMesh unstructured grids.
+
 # More information about PolyMesh:
 # https://cfd.direct/openfoam/user-guide/mesh-description/
+
+# Note: Unstructured Grids assumes that PolyMesh face definitions are
+# ordered in such a way that they first define internal faces, and
+# then boundary faces (each boundary patch at a time). This is normal
+# way for OpenFOAM meshes, since it allows easy definition of boundary
+# patches by startFace and nFaces. So, even though PolyMesh
+# definition allows definition of cell label "-1" for faces, it is
+# never encountered in a well-ordered PolyMesh.
+
+# Note: OpenFOAM includes renumberMesh utility, which orders cells and
+# optimizes bandwidth. It is recommended to run renumberMesh to
+# optimize PolyMesh.
+
+# Note: Face normals for all boundary faces must always point from
+# domain towards outside. Therefore neighbour list is always shorter
+# than owner list.
+
+# Note: Neighbour face list can contain a cell with larger cell index
+# than largest cell index in owner face list. This can happen e.g. for
+# meshes created with SnappyHexMesh when a cell is located inside the
+# mesh refinement region. Cell traversal path can form an "inward
+# spiral" structure, in which case the cell in spiral center is
+# defined completely by neighbour cells (all face normals of that cell
+# point inwards. If domain cell traversal ends with such a spiral,
+# then neighbour list ends having a larger cell index than owner list.
+
 
 import bpy
 from bpy_extras.io_utils import (
@@ -199,6 +226,11 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
         f.owner = ug.ugcells[owner[i]]
         # Add face to owner's ugfaces list
         f.owner.ugfaces.append(f)
+        # Add owner cell info for vertices
+        for v in face_verts[i]:
+            clist = ug.ugverts[v].ugcells
+            if not f.owner in clist:
+                clist.append(f.owner)
 
         # Add geometry to object
         if i < len(neighbour):
@@ -206,11 +238,17 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
             f.neighbour = ug.ugcells[neighbour[i]]
             # Add face to neighbour's ugfaces list
             f.neighbour.ugfaces.append(f)
+            # Add neighbour cell info for vertices
+            for v in face_verts[i]:
+                clist = ug.ugverts[v].ugcells
+                if not f.neighbour in clist:
+                    clist.append(f.neighbour)
 
             # Add edges if needed
             if gen_edges:
                 for j in range(len(face_verts[i])):
                     edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
+
         else:
             # Boundary face, add index and create face to mesh object
             f.bi = len(faces)

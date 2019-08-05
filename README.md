@@ -85,9 +85,14 @@ Currently implemented features include:
 
 - Selection of cells
 
+- Creation of cell zones and face zones from selections
+
 - Deletion of selected cells to carve voids into the domain
 
-- Extrusion of new cells (one or several layers) from selected faces
+- Extrusion of new cells (one or several layers) from selected faces.
+  At least initially this would be without any sense of topology (no
+  detection of corners or inward edges, just create side boundary
+  faces blindly).
 
 - Subdivision of cells to produce smaller cells
 
