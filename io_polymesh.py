@@ -193,8 +193,10 @@ def polymesh_get_verts(text):
 
 def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     '''Creates edge and face list from PolyMesh owner, neighbour and
-    faces text blocks
+    faces text blocks. Initializes UG faces and UG cells.
     '''
+
+    # TODO: Separate initialization? Function is getting big.
 
     edges = [] # List of edge vertex index pairs, to be generated
     faces = [] # List of face vertex index lists, to be generated
@@ -222,35 +224,45 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     for i in range(len(face_verts)):
         # Add ugface
         f = ug.UGFace(face_verts[i])
+
+        # Part 1. Process owner
         # Add owner cell index
         f.owner = ug.ugcells[owner[i]]
         # Add face to owner's ugfaces list
         f.owner.ugfaces.append(f)
-        # Add owner cell info for vertices
+
         for v in face_verts[i]:
+            # Add owner cell info for vertices
             clist = ug.ugverts[v].ugcells
             if not f.owner in clist:
                 clist.append(f.owner)
+            # Add vertex to cell's ugverts
+            if ug.ugverts[v] not in f.owner.ugverts:
+                f.owner.ugverts.append(ug.ugverts[v])
 
-        # Add geometry to object
+        # Part 2. Process neighbour
         if i < len(neighbour):
             # Add neighbour cell index
             f.neighbour = ug.ugcells[neighbour[i]]
             # Add face to neighbour's ugfaces list
             f.neighbour.ugfaces.append(f)
-            # Add neighbour cell info for vertices
+
             for v in face_verts[i]:
+                # Add neighbour cell info for vertices
                 clist = ug.ugverts[v].ugcells
                 if not f.neighbour in clist:
                     clist.append(f.neighbour)
+                # Add vertex to cell's ugverts
+                if ug.ugverts[v] not in f.neighbour.ugverts:
+                    f.neighbour.ugverts.append(ug.ugverts[v])
 
-            # Add edges if needed
+            # Add edges for geometry generation if needed
             if gen_edges:
                 for j in range(len(face_verts[i])):
                     edges.append(tuple([face_verts[i][j-1], face_verts[i][j]]))
 
         else:
-            # Boundary face, add index and create face to mesh object
+            # Boundary face, add index and create face geometry for mesh object
             f.bi = len(faces)
             faces.append(tuple(face_verts[i]))
 

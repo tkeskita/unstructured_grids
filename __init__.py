@@ -143,6 +143,7 @@ classes = (
     io_polymesh.UG_OT_PolyMeshToUG,
     io_polymesh.UG_OT_UGToPolyMesh,
     ug_op.UG_OT_Select_Cells_Inclusive,
+    ug_op.UG_OT_Select_Cells_Exclusive,
 )
 
 def register():

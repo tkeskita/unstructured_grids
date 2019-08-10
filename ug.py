@@ -37,12 +37,14 @@ class UGCell:
 
     deleted = False # boolean for marking deleted cells
     ugfaces = [] # list ugfaces that make up this cell
+    ugverts = [] # list of ugverts that make up this cell
     ei = -1 # Cell index (used at export only)
-    ii = -1 # Internal index (used for debugging
+    ii = -1 # Internal index (used for debugging)
 
     def __init__(self):
         '''Initialize UGCell with cell index'''
         self.ugfaces = []
+        self.ugverts = []
         self.ii = len(ugcells)
         ugcells.append(self)
 
