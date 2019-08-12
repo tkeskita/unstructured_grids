@@ -66,6 +66,8 @@ Currently implemented features include:
 
 - Boundary face patches can be changed by assigning material for faces
 
+- Selection of cells via operators (UG Select Cells Inclusive/Exclusive)
+
 
 ## Installation
 
@@ -82,8 +84,6 @@ Currently implemented features include:
 
 
 ## Development Ideas for Future
-
-- Selection of cells
 
 - Creation of cell zones and face zones from selections
 
