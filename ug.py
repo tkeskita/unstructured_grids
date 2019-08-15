@@ -30,7 +30,9 @@ ugfaces = [] # global list of all UGFaces
 ifaces0 = -1 # constant value of internal faces after import
 ugverts = [] # global list of all UGVerts
 ugboundaries = [] # global list of all UGBoundaries
+ugzones = [] # global list of all UGFaceZones and UGCellZones
 fulldebug = False # Set to True if you wanna see walls of logging debug
+
 
 class UGCell:
     '''Class for Unstructured Grid cell data objects'''
@@ -112,6 +114,28 @@ class UGBoundary:
         self.patchname = patchname
         self.mati = len(ugboundaries)
         ugboundaries.append(self)
+
+
+class UGZone:
+    '''Class for Unstructured Grid face and cell zone objects.
+    Face zones use ugfaces list and cell zones ugcells list.
+    '''
+
+    deleted = False # boolean for patches which contain zero faces
+    zonetype = 'face' # zone type name: cell or face
+    zonename = 'default' # zone name
+    ugfaces = [] # list of UGFaces that are part of face zone
+    ugcells = [] # list of UGCells that are part of cell zone
+    flipMap = [] # storage for face flipMap
+
+    def __init__(self, zonetype, zonename):
+        '''Initialize new zone with name zonename'''
+        self.ugfaces = []
+        self.ugcells = []
+        self.flipMap = []
+        self.zonetype = zonetype
+        self.zonename = zonename
+        ugzones.append(self)
 
 
 def initialize_ug_object():
@@ -204,6 +228,33 @@ def update_ugboundaries():
     for b in ugboundaries:
         b.nFaces = len(b.ugfaces)
         l.debug("Faces on patch %s: %d" %(b.patchname, b.nFaces))
+
+    return None
+
+
+class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
+    '''Sync UG zone objects from vertex groups.
+    Run after any changes to face or cell zone assignments.
+    '''
+    bl_idname = "unstructured_grids.update_ugzones"
+    bl_label = "Update UG Zones From Vertex Groups"
+
+    def execute(self, context):
+        update_ugzones()
+        return {'FINISHED'}
+
+
+def update_ugzones():
+    '''Updates face and cell zones from vertex groups assignments'''
+
+    ob = get_ug_object()
+    # Initialize zones
+    for z in ugzones:
+        z.deleted = True
+        z.ugfaces = []
+        z.ugcells = []
+
+    l.debug('TODO')
 
     return None
 

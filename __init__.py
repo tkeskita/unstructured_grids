@@ -97,6 +97,18 @@ class UGProperties(bpy.types.PropertyGroup):
         default="",
         maxlen=0,
     )
+    text_cellZones: bpy.props.StringProperty(
+        name="PolyMesh cellZones File Contents",
+        description="PolyMesh cellZones File Contents",
+        default="",
+        maxlen=0,
+    )
+    text_faceZones: bpy.props.StringProperty(
+        name="PolyMesh faceZones File Contents",
+        description="PolyMesh faceZones File Contents",
+        default="",
+        maxlen=0,
+    )
     generate_internal_edges: bpy.props.BoolProperty(
         name="Generate Edges for Internal Faces",
         description="Boolean for Generating Internal Face Edges",
@@ -138,6 +150,7 @@ def save_handler(dummy):
 classes = (
     UGProperties,
     ug.UG_OT_UpdateBoundariesFromFaceMaterials,
+    ug.UG_OT_UpdateZonesFromVertexGroups,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,

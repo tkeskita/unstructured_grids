@@ -57,6 +57,7 @@ from bpy_extras.io_utils import (
     axis_conversion,
 )
 from . import ug
+from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ def read_polymesh_files(self):
     ug_props = bpy.context.scene.ug_props
     dirpath = os.path.dirname(self.filepath)
 
+    # Compulsory files
     filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
     for f in filenames:
         varname = "text_" + f
@@ -93,6 +95,20 @@ def read_polymesh_files(self):
             self.report({'ERROR'}, "Could not find %r" \
                         % filepath)
             return None
+
+        with open(filepath, 'r') as infile:
+            setattr(ug_props, varname, infile.read())
+
+    # Optional files
+    filenames = ['cellZones', 'faceZones']
+    for f in filenames:
+        varname = "text_" + f
+        filepath = os.path.join(dirpath, f)
+        l.debug("Reading in as string: %s" % filepath)
+
+        if not (os.path.isfile(filepath)):
+            l.debug("Could not find %r" % filepath)
+            continue
 
         with open(filepath, 'r') as infile:
             setattr(ug_props, varname, infile.read())
@@ -161,11 +177,20 @@ def polymesh_to_ugdata(self):
     [edges, faces] = polymesh_get_faces( \
         ug_props.text_owner, ug_props.text_neighbour, ug_props.text_faces)
     polymesh_get_boundary(ug_props.text_boundary)
+
     # Create vertices and faces into mesh object
     ob.data.from_pydata(verts, edges, faces)
     ob.data.validate()
+
+    # Boundary patches
     apply_materials_to_boundaries(ob)
     ug.update_ugboundaries()
+
+    # Cell and face zones
+    polymesh_get_zone('cell', ug_props.text_cellZones)
+    polymesh_get_zone('face', ug_props.text_faceZones)
+    apply_vertex_groups_to_zones(ob)
+    ug.update_ugzones()
 
 def polymesh_get_verts(text):
     '''Creates list of vertex triplets from PolyMesh points text string'''
@@ -414,6 +439,88 @@ def polymesh_get_boundary(text):
     return None
 
 
+def polymesh_get_zone(zonetype, text):
+    '''Creates zone objects from PolyMesh zone text string for type
+    (either face or cell)
+    '''
+
+    import re
+    inside1 = False # boolean for marking top level entries in text
+    inside2 = False # boolean for marking bottom level entries in text
+    label = '' # label definition preceding list of integers
+    iList = [] # list of integers inside bottom level entry
+    zone = None # UGZone
+
+    rec1 = re.compile(r'^\s*\(', re.M)
+    rec2 = re.compile(r'^\s*\)', re.M)
+    rec3 = re.compile(r'^\s*([a-zA-Z][\w\%\:\-\.]*)$', re.M)
+    rec4 = re.compile(r'^\s*(\w+\s+[\w\<\>]+)\s*$', re.M)
+    rec5 = re.compile(r'^(\d+)', re.M)
+
+    for line in text.splitlines():
+        # Opening parenthesis
+        regex = rec1.search(line)
+        if regex:
+            if inside1:
+                inside2 = True
+            else:
+                inside1 = True
+
+        # Closing parenthesis
+        regex = rec2.search(line)
+        if regex:
+            if inside2:
+                # Add indices to correct UGZone list
+                if label.startswith('cellLabels'):
+                    for i in iList:
+                        zone.ugcells.append(ug.ugcells[i])
+                    l.debug("CellZone: " + str(zonename) + ": %d cells" % len(iList))
+                elif label.startswith('faceLabels'):
+                    for i in iList:
+                        zone.ugfaces.append(ug.ugfaces[i])
+                    l.debug("FaceZone: " + str(zonename) + ": %d faces" % len(iList))
+                elif label.startswith('flipMap'):
+                    # face flipMap is stored as a dummy list for now
+                    zone.flipMap = iList
+                    l.debug("Face FlipMap: " + str(zonename) + ": %d faces" % len(iList))
+                else:
+                    l.error("Unknown label " + str(label))
+                    return None
+
+                # Reinitialize
+                iList = []
+                inside2 = False
+                label = ''
+            else:
+                inside1 = False
+
+        if not inside1:
+            continue
+
+        if not inside2:
+            # New zone is a single word (with possibly special characters) on its own line
+            regex = rec3.search(line)
+            if regex:
+                zonename = str(regex.group(1))
+                l.debug("Reading in zone [%d]" % len(ug.ugzones))
+                zone = ug.UGZone(zonetype, zonename)
+
+            # Get label definition line
+            else:
+                regex = rec4.search(line)
+                if regex:
+                    label = str(regex.group(1))
+
+            continue
+
+        # Integer, at start of line
+        regex = rec5.search(line)
+        if regex:
+            iList.append(int(regex.group(1)))
+
+    return None
+
+
 def apply_materials_to_boundaries(ob):
     '''Sets materials to faces in object ob according to boundary assignments'''
 
@@ -461,6 +568,30 @@ def get_face_color(mati):
     [r, g, b] = [random.random() for i in range(3)]
     return [r, g, b, 1.0]
 
+
+def apply_vertex_groups_to_zones(ob):
+    '''Set/create vertex groups for object ob according to cell and face
+    zones data in ugzones
+    '''
+    mode = ob.mode # Save original mode
+
+    for z in ug.ugzones:
+        # Deselect all vertices, edges and faces
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        n = ug_op.select_vertices_from_ugcells(ob, z.ugcells)
+        if n > 0:
+            bpy.ops.object.mode_set(mode="EDIT")
+            l.debug("Selected vertex count: %d" % n)
+            vgname = z.zonetype + "Zone_" + z.zonename
+            bpy.ops.object.vertex_group_assign_new()
+            vg = ob.vertex_groups[-1]
+            vg.name = vgname
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+    bpy.ops.object.mode_set(mode=mode)
 
 ##### EXPORT #####
 
