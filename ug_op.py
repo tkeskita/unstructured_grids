@@ -154,3 +154,18 @@ def select_cells_exclusive():
     bpy.ops.object.mode_set(mode=mode)
 
     return len(clist2)
+
+
+def select_vertices_from_ugfaces(ob, flist):
+    '''Select mesh object vertices that are part of faces in argument UGFace
+    list. Return number of selected vertices.
+    '''
+
+    n = 0
+    for f in flist:
+        for v in f.ugverts:
+            if ob.data.vertices[v.bi].select == False:
+                ob.data.vertices[v.bi].select = True
+                n += 1
+    return n
+

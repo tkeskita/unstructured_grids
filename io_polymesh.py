@@ -239,7 +239,7 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
     # Populate list of ugcells
     for i in range(max(max(owner), max(neighbour)) + 1):
-        # Add new UGCcell
+        # Add new UGCell
         ug.UGCell()
         if i % print_interval == 0:
             l.debug("... processed cell count: %d" % i)
@@ -573,6 +573,21 @@ def apply_vertex_groups_to_zones(ob):
     '''Set/create vertex groups for object ob according to cell and face
     zones data in ugzones
     '''
+
+    def assign_to_new_vertex_group(ob, z):
+        '''Assigns currently selected vertices to new vertex group in object
+        ob for zone z
+        '''
+
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.object.vertex_group_assign_new()
+        # Set vertex group name
+        vgname = z.zonetype + "Zone_" + z.zonename
+        vg = ob.vertex_groups[-1]
+        vg.name = vgname
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+
     mode = ob.mode # Save original mode
 
     for z in ug.ugzones:
@@ -581,15 +596,15 @@ def apply_vertex_groups_to_zones(ob):
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode="OBJECT")
 
-        n = ug_op.select_vertices_from_ugcells(ob, z.ugcells)
-        if n > 0:
-            bpy.ops.object.mode_set(mode="EDIT")
-            l.debug("Selected vertex count: %d" % n)
-            vgname = z.zonetype + "Zone_" + z.zonename
-            bpy.ops.object.vertex_group_assign_new()
-            vg = ob.vertex_groups[-1]
-            vg.name = vgname
-            bpy.ops.object.mode_set(mode="OBJECT")
+        if z.zonetype == 'cell':
+            n = ug_op.select_vertices_from_ugcells(ob, z.ugcells)
+            if n > 0:
+                assign_to_new_vertex_group(ob, z)
+
+        elif z.zonetype == 'face':
+            n = ug_op.select_vertices_from_ugfaces(ob, z.ugfaces)
+            if n > 0:
+                assign_to_new_vertex_group(ob, z)
 
     bpy.ops.object.mode_set(mode=mode)
 
