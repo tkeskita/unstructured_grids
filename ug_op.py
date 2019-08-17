@@ -59,7 +59,7 @@ def select_cells_inclusive():
     # First get cells that are part of selected vertices
     verts = [v.index for v in ob.data.vertices if v.select]
     l.debug("Initially selected vertex count: %d" % len(verts))
-    clist = get_ugcells_from_vertices(verts)
+    clist = get_ugcells_from_vertices_inclusive(verts)
 
     # Select cell vertices
     n = select_vertices_from_ugcells(ob, clist)
@@ -70,10 +70,12 @@ def select_cells_inclusive():
     return len(clist)
 
 
-def get_ugcells_from_vertices(vilist):
+def get_ugcells_from_vertices_inclusive(vilist):
     '''Return list of UGCells that are part of argument vertex index list'''
 
     clist = []
+    i = 0
+    print_interval = 1000 # Debug print progress interval
     for v in vilist:
         ugvert = ug.ugverts[v]
         iis = ''
@@ -82,6 +84,9 @@ def get_ugcells_from_vertices(vilist):
             if c not in clist:
                 clist.append(c)
         if fulldebug: l.debug("Vert %d " % v + "is part of cell(s): " + iis)
+        if i % print_interval == 0:
+            l.debug("... processed vertex count: %d" % i)
+        i += 1
     return clist
 
 
@@ -130,17 +135,7 @@ def select_cells_exclusive():
     # First get cells that are part of selected vertices
     verts = [v.index for v in ob.data.vertices if v.select]
     l.debug("Initially selected vertex count: %d" % len(verts))
-    clist = get_ugcells_from_vertices(verts)
-
-    # Of those cells, find whole cells included in current vertex selection
-    clist2 = []
-    for c in clist:
-        test = True
-        for v in c.ugverts:
-            if v.bi not in verts:
-                test = False
-        if test:
-            clist2.append(c)
+    clist2 = get_ugcells_from_vertices_exclusive(verts)
 
     # Deselect all vertices, edges and faces
     bpy.ops.object.mode_set(mode="EDIT")
@@ -154,6 +149,32 @@ def select_cells_exclusive():
     bpy.ops.object.mode_set(mode=mode)
 
     return len(clist2)
+
+def get_ugcells_from_vertices_exclusive(vilist):
+    '''Return list of UGCells that are completely defined by vertices in
+    vertex index list vilist
+    '''
+
+    # TODO: Improve speed somehow?
+
+    # First get cells that are part of vertices
+    clist = get_ugcells_from_vertices_inclusive(vilist)
+
+    # Of those cells, find whole cells included in current vertex selection
+    clist2 = []
+    i = 0
+    print_interval = 1000 # Debug print progress interval
+    for c in clist:
+        test = True
+        for v in c.ugverts:
+            if v.bi not in vilist:
+                test = False
+        if test:
+            clist2.append(c)
+        if i % print_interval == 0:
+            l.debug("... processed cell count: %d" % i)
+        i += 1
+    return clist2
 
 
 def select_vertices_from_ugfaces(ob, flist):

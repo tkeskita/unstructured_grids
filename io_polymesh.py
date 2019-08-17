@@ -190,7 +190,7 @@ def polymesh_to_ugdata(self):
     polymesh_get_zone('cell', ug_props.text_cellZones)
     polymesh_get_zone('face', ug_props.text_faceZones)
     apply_vertex_groups_to_zones(ob)
-    ug.update_ugzones()
+    #ug.update_ugzones() # not necessary after import
 
 def polymesh_get_verts(text):
     '''Creates list of vertex triplets from PolyMesh points text string'''

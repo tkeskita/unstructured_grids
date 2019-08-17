@@ -21,6 +21,7 @@
 # Core classes and routines for Unstructured Grids
 
 import bpy
+from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ class UGZone:
     flipMap = [] # storage for face flipMap
 
     def __init__(self, zonetype, zonename):
-        '''Initialize new zone with name zonename'''
+        '''Initialize new zone with name zone type and zone name'''
         self.ugfaces = []
         self.ugcells = []
         self.flipMap = []
@@ -240,23 +241,60 @@ class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
     bl_label = "Update UG Zones From Vertex Groups"
 
     def execute(self, context):
-        update_ugzones()
+        n = update_ugzones()
+        self.report({'INFO'}, "Updated %d zone(s) from vertex groups" % n)
         return {'FINISHED'}
 
 
 def update_ugzones():
-    '''Updates face and cell zones from vertex groups assignments'''
+    '''Update face and cell zones from vertex group assignments'''
 
     ob = get_ug_object()
     # Initialize zones
     for z in ugzones:
         z.deleted = True
-        z.ugfaces = []
+        # TODO: Face normal direction issue: Face normals need
+        # to be visualized and made flippable in UI. Face zones
+        # can't be changed before that.
+        # z.ugfaces = []
         z.ugcells = []
 
-    l.debug('TODO')
+    # Process all vertex groups:
+    i = 0
+    n = 0
+    for vg in ob.vertex_groups:
+        vgname = vg.name
 
-    return None
+        # Determine zonetype
+        if vgname.startswith('cell'):
+            zonetype = 'cell'
+        elif vgname.startswith('face'):
+            zonetype = 'face'
+        else:
+            continue
+
+        zonename = vgname.replace(zonetype + 'Zone_', '')
+
+        # Get existing zone or create new
+        if len(ugzones) <= i:
+            z = UGZone(zonetype, zonename)
+        else:
+            z = ugzones[i]
+
+        # Get vertices belonging to this vertex group
+        verts = [v.index for v in ob.data.vertices if \
+                 vg.index in [vg.group for vg in v.groups]]
+
+        if zonetype == 'cell':
+            l.debug("Search cells among %d verts" % len(verts))
+            z.ugcells = ug_op.get_ugcells_from_vertices_exclusive(verts)
+            l.debug("Cell zone: " + z.zonename + " cell count: %d" % len(z.ugcells))
+            n += 1
+        elif zonetype == 'face':
+            l.error("Face zone update is not yet supported")
+        i += 1
+
+    return n
 
 
 def get_next_undeleted_cell(clist, ind):

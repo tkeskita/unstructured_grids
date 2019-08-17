@@ -31,6 +31,7 @@ Blender modelling and material systems on a basic level.
   rely on special operators which keep UG data model and Blender mesh
   object contents in sync.
 
+- Operations with large vertex selections are slow.
 
 ## Use Case Examples
 
