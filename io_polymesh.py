@@ -608,7 +608,10 @@ def apply_vertex_groups_to_zones(ob):
 
     bpy.ops.object.mode_set(mode=mode)
 
+
+##################
 ##### EXPORT #####
+##################
 
 
 class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
@@ -630,6 +633,11 @@ class UG_OT_UGToPolyMesh(bpy.types.Operator):
     bl_label = "Generate polyMesh texts from UG data"
 
     def execute(self, context):
+        # Force update boundaries
+        ug.update_ugboundaries()
+        # Force update zones
+        ug.update_ugzones()
+        # Generate text strings
         ugdata_to_polymesh(self)
         return {'FINISHED'}
 
@@ -650,6 +658,8 @@ def ugdata_to_polymesh(self):
     owneri, neighbouri = update_ei_and_text_faces(ob)
     update_text_owner_neighbour(owneri, neighbouri)
     update_text_boundary()
+    update_text_cell_zones()
+    # update_text_face_zones() # TODO
     return None
 
 def update_text_points(ob):
@@ -861,6 +871,45 @@ def update_text_boundary():
     return None
 
 
+def update_text_cell_zones():
+    '''Update PolyMesh cellZones text string contents from UG data'''
+
+    ztext = '' # generated zone entries
+    nzones = 0 # number of cell zones
+
+    # Zone texts
+    for z in ug.ugzones:
+        if z.zonetype != 'cell':
+            continue
+        if z.deleted:
+            continue
+        text = z.zonename + "\n"
+        text += "{\n"
+        text += "type " + z.zonetype + "Zone;\n"
+        text += "cellLabels List<label>\n"
+        text += str(len(z.ugcells)) + "\n"
+        text += "(\n"
+        for c in z.ugcells:
+            text += str(c.ei) + "\n"
+        text += ");\n}\n\n"
+        ztext += text
+        nzones +=1
+
+    # Generate new text
+    if nzones == 0:
+        bpy.context.scene.ug_props.text_cellZones = ''
+        l.debug("text_cellZones is empty (no cell zones defined)")
+        return None
+
+    text = of_file_header('regIOobject', 'cellZones') + "\n"
+    text += str(nzones) + "\n(\n"
+    text += ztext + ")\n"
+
+    bpy.context.scene.ug_props.text_cellZones = text
+    l.debug("updated cell zones: %d" % nzones)
+    return None
+
+
 def write_polymesh_files(self):
     '''Write contents of data strings into PolyMesh files'''
 
@@ -868,12 +917,25 @@ def write_polymesh_files(self):
     ug_props = bpy.context.scene.ug_props
     dirpath = os.path.dirname(self.filepath)
 
+    # Compulsory files
     filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
     for f in filenames:
         varname = "text_" + f
         filepath = os.path.join(dirpath, f)
         l.debug("Writing to: %s" % filepath)
 
+        with open(filepath, 'w') as outfile:
+            outfile.write(getattr(ug_props, varname))
+
+    # Optional files
+    filenames = ['cellZones', 'faceZones']
+    for f in filenames:
+        varname = "text_" + f
+        filepath = os.path.join(dirpath, f)
+        if len(getattr(ug_props, varname)) == 0:
+            continue
+
+        l.debug("Writing to: %s" % filepath)
         with open(filepath, 'w') as outfile:
             outfile.write(getattr(ug_props, varname))
 

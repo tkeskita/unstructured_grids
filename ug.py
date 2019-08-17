@@ -280,6 +280,7 @@ def update_ugzones():
             z = UGZone(zonetype, zonename)
         else:
             z = ugzones[i]
+        z.deleted = False
 
         # Get vertices belonging to this vertex group
         verts = [v.index for v in ob.data.vertices if \
