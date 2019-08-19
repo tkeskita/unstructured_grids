@@ -21,7 +21,7 @@
 bl_info = {
     "name": "Unstructured Grids for Blender",
     "author": "Tuomo Keskitalo",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (2, 80, 0),
     "location": "TBA",
     "description": "Import, Editing and Export of Unstructured Grids (3D Volume Meshes)",
@@ -143,7 +143,7 @@ def save_handler(dummy):
     if len(ug.ugcells) == 0:
         return None
     l.debug("Executing pre_save handler")
-    bpy.ops.unstructured_grids.ug_to_polymesh()
+    bpy.ops.unstructured_grids.update_all_from_blender()
 
 
 
@@ -151,12 +151,12 @@ classes = (
     UGProperties,
     ug.UG_OT_UpdateBoundariesFromFaceMaterials,
     ug.UG_OT_UpdateZonesFromVertexGroups,
+    ug.UG_OT_UpdateUGAllFromBlender,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
-    io_polymesh.UG_OT_UGToPolyMesh,
-    ug_op.UG_OT_Select_Cells_Inclusive,
-    ug_op.UG_OT_Select_Cells_Exclusive,
+    ug_op.UG_OT_SelectCellsInclusive,
+    ug_op.UG_OT_SelectCellsExclusive,
 )
 
 def register():

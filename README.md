@@ -26,12 +26,11 @@ Blender modelling and material systems on a basic level.
   Unstructured grid is defined by lists of cells, cell faces and face
   vertices.
 
-- Besides moving of vertices and assigning of boundary faces to materials
-  corresponding to boundary patches, modifications of unstructured grids
-  rely on special operators which keep UG data model and Blender mesh
-  object contents in sync.
+- Except for moving of vertices, assigning of boundary faces to materials
+  (boundary patches) and assigning vertices to vertex groups (zones),
+  modifications of unstructured grids rely on special operators which
+  keep UG Data and Blender mesh object contents in sync.
 
-- Operations with large vertex selections are slow.
 
 ## Use Case Examples
 
@@ -63,11 +62,19 @@ Currently implemented features include:
   neighbour, owner, points). PolyMesh Import and Export operators are located
   in File menu under Import and Export.
 
-- Storage of unstructured grid data as strings inside Blend files
+- Unstructured grid data is saved as text strings (UG Storage) inside Blend files.
+
+- Undo (CTRL + Z) is not working correctly, but undo is supported indirectly:
+  Use operator *Update UG Data and Storage from Blender* to sync
+  changes made in Blender for safekeeping in UG Storage. To undo, use
+  operator *Restore UG Data from UG Storage*.
 
 - Boundary face patches can be changed by assigning material for faces
 
 - Selection of cells via operators (UG Select Cells Inclusive/Exclusive)
+
+- Cell and face zones are visualized by vertex groups. Vertex groups
+  for cell zones can be edited.
 
 
 ## Installation
@@ -83,10 +90,13 @@ Currently implemented features include:
 
 - Click “Save Preferences” to autoload add-on every time Blender is started
 
+- Note: Python Logging console messages may be useful in case of problems.
+  More information in file *__init__.py*.
+
 
 ## Development Ideas for Future
 
-- Creation of cell zones and face zones from selections
+- Add support for face zone editing (face normal direction and flipMap)
 
 - Deletion of selected cells to carve voids into the domain
 

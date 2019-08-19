@@ -22,13 +22,13 @@
 
 import bpy
 from . import ug_op
+from . import io_polymesh
 import logging
 l = logging.getLogger(__name__)
 
 obname = "Unstructured Grid" # Name for the Blender object
 ugcells = [] # global list of all UGCells
 ugfaces = [] # global list of all UGFaces
-ifaces0 = -1 # constant value of internal faces after import
 ugverts = [] # global list of all UGVerts
 ugboundaries = [] # global list of all UGBoundaries
 ugzones = [] # global list of all UGFaceZones and UGCellZones
@@ -139,18 +139,24 @@ class UGZone:
         ugzones.append(self)
 
 
+##########################
+##### HELP FUNCTIONS #####
+##########################
+
+
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object and
     initializes UG data
     '''
 
-    global ugverts, ugfaces, ugcells, ugboundaries
+    global ugverts, ugfaces, ugcells, ugboundaries, ugzones
 
     # Zero UG data
     ugverts = []
     ugfaces = []
     ugcells = []
     ugboundaries = []
+    ugzones = []
 
     # Initialize mesh object
     if obname in bpy.data.objects:
@@ -172,11 +178,10 @@ def initialize_ug_object():
 
 
 def get_ug_object():
-    '''Returns UG object'''
+    '''Returns UG Blender object or None if it does not exist'''
 
     if obname in bpy.data.objects:
         return bpy.data.objects[obname]
-    l.error("No object named " + obname)
     return None
 
 
@@ -187,6 +192,14 @@ class UG_OT_UpdateBoundariesFromFaceMaterials(bpy.types.Operator):
     bl_idname = "unstructured_grids.update_ugboundaries"
     bl_label = "Update UG Boundaries From Materials"
 
+    @classmethod
+    def poll(cls, context):
+        ob = get_ug_object()
+        if not ob:
+            return False
+        return (ob and ob.type == 'MESH' and \
+                context.mode in {'OBJECT','EDIT_MESH'})
+
     def execute(self, context):
         update_ugboundaries()
         return {'FINISHED'}
@@ -196,6 +209,8 @@ def update_ugboundaries():
     '''Updates Boundary definitions and properties according to Materials
     for all boundary faces.
     '''
+
+    global ugboundaries
 
     ob = get_ug_object()
     # Initialize ugboundaries
@@ -240,6 +255,14 @@ class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
     bl_idname = "unstructured_grids.update_ugzones"
     bl_label = "Update UG Zones From Vertex Groups"
 
+    @classmethod
+    def poll(cls, context):
+        ob = get_ug_object()
+        if not ob:
+            return False
+        return (ob and ob.type == 'MESH' and \
+                context.mode in {'OBJECT','EDIT_MESH'})
+
     def execute(self, context):
         n = update_ugzones()
         self.report({'INFO'}, "Updated %d zone(s) from vertex groups" % n)
@@ -248,6 +271,8 @@ class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
 
 def update_ugzones():
     '''Update face and cell zones from vertex group assignments'''
+
+    global ugzones
 
     ob = get_ug_object()
     # Initialize zones
@@ -298,6 +323,70 @@ def update_ugzones():
     return n
 
 
+class UG_OT_UpdateUGAllFromBlender(bpy.types.Operator):
+    '''Operator to update all changes made in Blender into UG data model'''
+    bl_idname = "unstructured_grids.update_all_from_blender"
+    bl_label = "Update UG Data and Storage From Blender"
+
+    @classmethod
+    def poll(cls, context):
+        ob = get_ug_object()
+        if not ob:
+            return False
+        return (ob and ob.type == 'MESH' and \
+                context.mode in {'OBJECT','EDIT_MESH'})
+
+    def execute(self, context):
+        update_ug_all_from_blender(self)
+        return {'FINISHED'}
+
+
+def update_ug_all_from_blender(self=None):
+    '''Update all changes made in Blender into UG data model.
+    Returns True if Unstructured Grid is OK, False otherwise.
+    '''
+
+    global ugverts, ugfaces, ugcells, ugboundaries, ugzones
+
+    ug_props = bpy.context.scene.ug_props
+    found_cells = False
+    for c in ugcells:
+        if c.deleted == False:
+            found_cells = True
+
+    # Zero all if there are no cells
+    if not found_cells:
+        ugcells = []
+        ugfaces = []
+        ugverts = []
+        ugboundaries = []
+        ugzones = []
+        ug_props.text_boundary = ''
+        ug_props.text_faces = ''
+        ug_props.text_neighbour = ''
+        ug_props.text_owner = ''
+        ug_props.text_points = ''
+        ug_props.text_cellZones = ''
+        ug_props.text_faceZones = ''
+        if self:
+            self.report({'ERROR'}, "No cells detected in %r" % obname)
+        return False
+
+    # Force update boundaries
+    update_ugboundaries()
+    # Force update zones
+    update_ugzones()
+    # Update PolyMesh text strings
+    io_polymesh.ugdata_to_polymesh(self)
+
+    return True
+
+
+######################
+##### SCRAP YARD #####
+######################
+
+
 def get_next_undeleted_cell(clist, ind):
     '''Finds next undeleted UGCell in clist starting from index ind+1.
     Returns UGCell and it's index in clist.
@@ -321,6 +410,8 @@ def order_ugcells_by_BFS():
 
     Note: This function uses UGFace.ei to track processed faces.
     '''
+
+    global ugverts, ugfaces, ugcells, ugboundaries
 
     from collections import deque
 
@@ -382,6 +473,8 @@ def order_ugcells_by_internal_face_search():
     Note: This function uses UGCell.ei to store number of unprocessed
     neighbour cells, to track which cells to include next in the list.
     '''
+
+    global ugverts, ugfaces, ugcells, ugboundaries
 
     def init_ncells():
         '''Initialize ugcells ei property with number of neighbour cells

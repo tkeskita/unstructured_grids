@@ -156,9 +156,16 @@ def polymesh_boundary_ingroup_fix():
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
     '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
     bl_idname = "unstructured_grids.polymesh_to_ug"
-    bl_label = "Generate UG from polyMesh texts"
+    bl_label = "Restore UG Data from UG Storage"
+
+    @classmethod
+    def poll(cls, context):
+        return (context.mode in {'OBJECT','EDIT_MESH'})
 
     def execute(self, context):
+        if not ug.obname in bpy.data.objects:
+            self.report({'ERROR'}, "No object %r found, please Import PolyMesh" % ug.obname)
+            return {'FINISHED'}
         polymesh_to_ugdata(self)
         return {'FINISHED'}
 
@@ -621,38 +628,16 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
 
     filename_ext = ".polyMesh" # Dummy, required by ExportHelper
     def execute(self, context):
-        ug.update_ugboundaries()
-        ugdata_to_polymesh(self)
+        ug.update_ug_all_from_blender(self)
         write_polymesh_files(self)
         return {'FINISHED'}
 
 
-class UG_OT_UGToPolyMesh(bpy.types.Operator):
-    '''Generate OpenFOAM PolyMesh file contents from Unstructed Grid data'''
-    bl_idname = "unstructured_grids.ug_to_polymesh"
-    bl_label = "Generate polyMesh texts from UG data"
-
-    def execute(self, context):
-        # Force update boundaries
-        ug.update_ugboundaries()
-        # Force update zones
-        ug.update_ugzones()
-        # Generate text strings
-        ugdata_to_polymesh(self)
-        return {'FINISHED'}
-
-
 def ugdata_to_polymesh(self):
-    '''Convert UG data into polymesh text data strings'''
+    '''Convert up-to-date UG data into PolyMesh text data strings
+    and store those in ug_props.text_* string properties
+    '''
 
-    # UG data is assumed to be up-to-date at this point
-    ug_props = bpy.context.scene.ug_props
-    if len(ug.ugcells) == 0:
-        return None
-
-    if not ug.obname in bpy.data.objects:
-        self.report({'ERROR'}, "No object named %r" % ug.obname)
-        return {'FINISHED'}
     ob = bpy.data.objects[ug.obname]
     update_text_points(ob)
     owneri, neighbouri = update_ei_and_text_faces(ob)
@@ -797,7 +782,6 @@ def update_ei_and_text_faces(ob):
     # Internal pass
     text_internal, i, owneri, neighbouri = internal_face_pass(ordered_ugcells)
     l.debug("text_faces updated internal faces: %d", i)
-    ug.ifaces0 = i # Update internal face count
 
     # Boundary pass
     text_boundary, i, owneri = boundary_face_pass(i, ob, owneri)
