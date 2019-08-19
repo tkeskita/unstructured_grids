@@ -91,12 +91,12 @@ Currently implemented features include:
 - Click “Save Preferences” to autoload add-on every time Blender is started
 
 - Note: Python Logging console messages may be useful in case of problems.
-  More information in file *__init__.py*.
+  More information in file *"__init__.py"*.
 
 
 ## Development Ideas for Future
 
-- Add support for face zone editing (face normal direction and flipMap)
+- Add GUI Panel for accessing operators and UG information
 
 - Deletion of selected cells to carve voids into the domain
 
@@ -105,9 +105,11 @@ Currently implemented features include:
   detection of corners or inward edges, just create side boundary
   faces blindly).
 
-- Subdivision of cells to produce smaller cells
-
 - Merge selected cells
+
+- Add support for face zone editing (face normal direction and flipMap)
+
+- Subdivision of cells to produce smaller cells
 
 - Import/export of VTK Unstructured Grids
 
