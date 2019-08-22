@@ -125,6 +125,7 @@ def menu_export(self, context):
                          text="OpenFOAM PolyMesh (UG)"
     )
 
+
 @persistent
 def load_handler(dummy):
     '''Updates UG data from string variables after loading Blend file'''
@@ -134,6 +135,7 @@ def load_handler(dummy):
         return None
     l.debug("Executing load_post handler")
     bpy.ops.unstructured_grids.polymesh_to_ug()
+
 
 @persistent
 def save_handler(dummy):
@@ -146,8 +148,58 @@ def save_handler(dummy):
     bpy.ops.unstructured_grids.update_all_from_blender()
 
 
+class VIEW3D_PT_UG_GUI:
+    '''UG Tool Bar, common for object and edit modes'''
+    bl_label = "Unstructured Grid"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.type == 'MESH'
+
+    def draw(self, context):
+        layout = self.layout
+        ug_props = context.scene.ug_props
+
+        row = layout.row()
+        row.label(text=ug.ug_print_stats())
+
+        row = layout.row()
+        row.operator("unstructured_grids.import_openfoam_polymesh", text="Import PolyMesh")
+        row = layout.row()
+        row.operator("unstructured_grids.update_all_from_blender", text="Update to Storage")
+        row = layout.row()
+        row.operator("unstructured_grids.polymesh_to_ug", text="Restore from Storage")
+        row = layout.row()
+        row.operator("unstructured_grids.export_openfoam_polymesh", text="Export PolyMesh")
+
+        row = layout.row()
+        row.label(text="Select Cells:")
+        col = layout.column()
+        rowsub = col.row(align=True)
+        rowsub.operator("unstructured_grids.select_cells_exclusive", text="Exclusive")
+        rowsub.operator("unstructured_grids.select_cells_inclusive", text="Inclusive")
+
+
+class VIEW3D_PT_UG_GUI_Object(bpy.types.Panel, VIEW3D_PT_UG_GUI):
+    '''UG Panel in Object Mode'''
+    bl_category = "UG"
+    bl_idname = "VIEW3D_PT_ug_object_mode"
+    bl_context = "objectmode"
+
+
+class VIEW3D_PT_UG_GUI_Edit(bpy.types.Panel, VIEW3D_PT_UG_GUI):
+    '''UG Panel in Edit Mode'''
+    bl_category = "UG"
+    bl_idname = "VIEW3D_PT_ug_edit_mode"
+    bl_context = "mesh_edit"
+
 
 classes = (
+    VIEW3D_PT_UG_GUI_Object,
+    VIEW3D_PT_UG_GUI_Edit,
     UGProperties,
     ug.UG_OT_UpdateBoundariesFromFaceMaterials,
     ug.UG_OT_UpdateZonesFromVertexGroups,

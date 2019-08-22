@@ -26,10 +26,11 @@ Blender modelling and material systems on a basic level.
   Unstructured grid is defined by lists of cells, cell faces and face
   vertices.
 
-- Except for moving of vertices, assigning of boundary faces to materials
-  (boundary patches) and assigning vertices to vertex groups (zones),
-  modifications of unstructured grids rely on special operators which
-  keep UG Data and Blender mesh object contents in sync.
+- Except for moving of vertices, assigning of boundary faces to
+  materials (boundary patches) and assigning vertices to vertex groups
+  (zones), modifications of unstructured grids rely on special
+  operators ('UG' in operator name) which keep UG Data and Blender
+  mesh object contents in sync.
 
 
 ## Use Case Examples
@@ -76,6 +77,9 @@ Currently implemented features include:
 - Cell and face zones are visualized by vertex groups. Vertex groups
   for cell zones can be edited.
 
+- UG GUI Panel is shown as a Tab in Sidebar in 3D Viewport, for easy
+  access to UG operators and information.
+
 
 ## Installation
 
@@ -91,12 +95,10 @@ Currently implemented features include:
 - Click “Save Preferences” to autoload add-on every time Blender is started
 
 - Note: Python Logging console messages may be useful in case of problems.
-  More information in file *"__init__.py"*.
+  More information in file *\_\_init\_\_.py*.
 
 
 ## Development Ideas for Future
-
-- Add GUI Panel for accessing operators and UG information
 
 - Deletion of selected cells to carve voids into the domain
 

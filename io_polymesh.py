@@ -68,9 +68,13 @@ print_interval = 100000 # Debug print progress interval
 ##### IMPORT #####
 
 class UG_OT_ImportPolyMesh(bpy.types.Operator, ImportHelper):
-    '''Import OpenFOAM PolyMesh as Unstructured Grid'''
+    '''Import OpenFOAM PolyMesh Files into Blender as UG Data'''
     bl_idname = "unstructured_grids.import_openfoam_polymesh"
-    bl_label = "Import OpenFOAM PolyMesh"
+    bl_label = "Import OpenFOAM PolyMesh (UG)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'}
 
     def execute(self, context):
         read_polymesh_files(self)
@@ -154,13 +158,13 @@ def polymesh_boundary_ingroup_fix():
 
 
 class UG_OT_PolyMeshToUG(bpy.types.Operator):
-    '''Generate UG data and mesh object from OpenFOAM PolyMesh file contents'''
+    '''(Re)generate UG Data from PolyMesh Data in UG Storage'''
     bl_idname = "unstructured_grids.polymesh_to_ug"
-    bl_label = "Restore UG Data from UG Storage"
+    bl_label = "(Re)generate UG Data from UG Storage"
 
     @classmethod
     def poll(cls, context):
-        return (context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
 
     def execute(self, context):
         if not ug.obname in bpy.data.objects:
@@ -197,7 +201,9 @@ def polymesh_to_ugdata(self):
     polymesh_get_zone('cell', ug_props.text_cellZones)
     polymesh_get_zone('face', ug_props.text_faceZones)
     apply_vertex_groups_to_zones(ob)
-    #ug.update_ugzones() # not necessary after import
+    ug.update_ugzones() # not necessary after import, but yes after regenerate
+    bpy.ops.object.mode_set(mode='OBJECT')
+
 
 def polymesh_get_verts(text):
     '''Creates list of vertex triplets from PolyMesh points text string'''
@@ -622,11 +628,16 @@ def apply_vertex_groups_to_zones(ob):
 
 
 class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
-    '''Export OpenFOAM PolyMesh as Unstructured Grid'''
+    '''Export UG Data as OpenFOAM PolyMesh Files'''
     bl_idname = "unstructured_grids.export_openfoam_polymesh"
-    bl_label = "Export OpenFOAM PolyMesh"
+    bl_label = "Export OpenFOAM PolyMesh (UG)"
 
     filename_ext = ".polyMesh" # Dummy, required by ExportHelper
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+
     def execute(self, context):
         ug.update_ug_all_from_blender(self)
         write_polymesh_files(self)

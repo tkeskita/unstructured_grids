@@ -28,19 +28,13 @@ fulldebug = False # Set to True if you wanna see walls of logging debug
 print_interval = 100000 # Debug print progress interval
 
 class UG_OT_SelectCellsInclusive(bpy.types.Operator):
-    '''Operator to extend vertex selection to include all cells that currently
-    selected vertices are part of
-    '''
+    '''Extend current vertex selection to include whole cells'''
     bl_idname = "unstructured_grids.select_cells_inclusive"
     bl_label = "Select UG Cells (Inclusive)"
 
     @classmethod
     def poll(cls, context):
-        ob = ug.get_ug_object()
-        if not ob:
-            return False
-        return (ob and ob.type == 'MESH' and \
-                context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
 
     def execute(self, context):
         n = select_cells_inclusive()
@@ -111,18 +105,14 @@ def select_vertices_from_ugcells(ob, clist):
 
 
 class UG_OT_SelectCellsExclusive(bpy.types.Operator):
-    '''Operator to reduce vertex selection to include only whole cells'''
+    '''Reduce current vertex selection to include only whole cells'''
 
     bl_idname = "unstructured_grids.select_cells_exclusive"
     bl_label = "Select UG Cells (Exclusive)"
 
     @classmethod
     def poll(cls, context):
-        ob = ug.get_ug_object()
-        if not ob:
-            return False
-        return (ob and ob.type == 'MESH' and \
-                context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
 
     def execute(self, context):
         n = select_cells_exclusive()

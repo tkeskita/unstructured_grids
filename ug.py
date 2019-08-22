@@ -159,7 +159,9 @@ def initialize_ug_object():
     ugzones = []
 
     # Initialize mesh object
-    if obname in bpy.data.objects:
+    ob = get_ug_object()
+    if ob:
+        bpy.ops.object.mode_set(mode='OBJECT')
         l.debug("Delete existing object " + obname)
         bpy.ops.object.select_all(action='DESELECT')
         bpy.data.objects[obname].select_set(True)
@@ -185,6 +187,37 @@ def get_ug_object():
     return None
 
 
+def exists_ug_state():
+    '''Return True if UG Data (up-to-date or not) exists in memory,
+    False otherwise.
+    '''
+
+    global ugcells
+    test = False
+    for c in ugcells:
+        if c.deleted == False:
+            test = True
+            break
+    ug_props = bpy.context.scene.ug_props
+    if (len(ug_props.text_points) < 1):
+        test = False
+    if not get_ug_object():
+        test = False
+    return test
+
+
+def ug_print_stats():
+    '''Print short text with statistics of UG Data'''
+
+    global ugcells
+
+    if not exists_ug_state():
+        return "No Data, Please Import PolyMesh"
+    clist = [c for c in ugcells if c.deleted == False]
+    text = "Cells: " + str(len(clist))
+    return text
+
+
 class UG_OT_UpdateBoundariesFromFaceMaterials(bpy.types.Operator):
     '''Run after any changes to material slot or face material assignments.
     Materials are used to define boundary patch name and face assignments.
@@ -194,11 +227,7 @@ class UG_OT_UpdateBoundariesFromFaceMaterials(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        ob = get_ug_object()
-        if not ob:
-            return False
-        return (ob and ob.type == 'MESH' and \
-                context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and exists_ug_state()
 
     def execute(self, context):
         update_ugboundaries()
@@ -257,11 +286,7 @@ class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        ob = get_ug_object()
-        if not ob:
-            return False
-        return (ob and ob.type == 'MESH' and \
-                context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and exists_ug_state()
 
     def execute(self, context):
         n = update_ugzones()
@@ -324,20 +349,17 @@ def update_ugzones():
 
 
 class UG_OT_UpdateUGAllFromBlender(bpy.types.Operator):
-    '''Operator to update all changes made in Blender into UG data model'''
+    '''Update All Changes Made in Blender into UG Data'''
     bl_idname = "unstructured_grids.update_all_from_blender"
     bl_label = "Update UG Data and Storage From Blender"
 
     @classmethod
     def poll(cls, context):
-        ob = get_ug_object()
-        if not ob:
-            return False
-        return (ob and ob.type == 'MESH' and \
-                context.mode in {'OBJECT','EDIT_MESH'})
+        return context.mode in {'OBJECT','EDIT_MESH'} and exists_ug_state()
 
     def execute(self, context):
         update_ug_all_from_blender(self)
+        self.report({'INFO'}, "Updated UG Data and Storage")
         return {'FINISHED'}
 
 
