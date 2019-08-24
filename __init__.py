@@ -182,6 +182,9 @@ class VIEW3D_PT_UG_GUI:
         rowsub.operator("unstructured_grids.select_cells_exclusive", text="Exclusive")
         rowsub.operator("unstructured_grids.select_cells_inclusive", text="Inclusive")
 
+        row = layout.row()
+        row.operator("unstructured_grids.delete_cells", text="Delete Cells")
+
 
 class VIEW3D_PT_UG_GUI_Object(bpy.types.Panel, VIEW3D_PT_UG_GUI):
     '''UG Panel in Object Mode'''
@@ -209,6 +212,7 @@ classes = (
     io_polymesh.UG_OT_PolyMeshToUG,
     ug_op.UG_OT_SelectCellsInclusive,
     ug_op.UG_OT_SelectCellsExclusive,
+    ug_op.UG_OT_DeleteCells,
 )
 
 def register():

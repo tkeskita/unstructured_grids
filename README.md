@@ -32,6 +32,8 @@ Blender modelling and material systems on a basic level.
   operators ('UG' in operator name) which keep UG Data and Blender
   mesh object contents in sync.
 
+- Operations can be slow for large meshes.
+
 
 ## Use Case Examples
 
@@ -80,6 +82,8 @@ Currently implemented features include:
 - UG GUI Panel is shown as a Tab in Sidebar in 3D Viewport, for easy
   access to UG operators and information.
 
+- Deletion of selected cells to carve voids into the domain.
+
 
 ## Installation
 
@@ -99,8 +103,6 @@ Currently implemented features include:
 
 
 ## Development Ideas for Future
-
-- Deletion of selected cells to carve voids into the domain
 
 - Extrusion of new cells (one or several layers) from selected faces.
   At least initially this would be without any sense of topology (no

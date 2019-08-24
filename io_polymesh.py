@@ -164,7 +164,8 @@ class UG_OT_PolyMeshToUG(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+        ug_props = bpy.context.scene.ug_props
+        return context.mode in {'OBJECT','EDIT_MESH'} and len(ug_props.text_points) > 0
 
     def execute(self, context):
         if not ug.obname in bpy.data.objects:
@@ -558,7 +559,13 @@ def apply_materials_to_boundaries(ob):
         # Create new material slot to object and set material
         bpy.ops.object.material_slot_add()
         ob.active_material = mat
-        ob.data.materials[mati].diffuse_color = get_face_color(mati)
+
+        # Color is given to all patches but not the one named
+        # 'default', because that is used for new boundary faces. User
+        # probably wants to assign manually those, so we leave them
+        # uncolored to help spot them.
+        if b.patchname != 'default':
+            ob.data.materials[mati].diffuse_color = get_face_color(mati)
 
         # Set material index for mesh faces
         for i in range(b.nFaces):
@@ -570,7 +577,7 @@ def apply_materials_to_boundaries(ob):
 def get_face_color(mati):
     '''Gives a color to argument material number'''
 
-    base_colors = [(0.3,0.3,0.3,1), (0,0,1,1), (1,0,0,1), (0,1,0,1), \
+    base_colors = [(0,0,1,1), (1,0,0,1), (0,1,0,1), \
              (0.7,0.7,0,1), (0,0.7,0.7,1), (0.7,0,0.7,1)]
     if mati < len(base_colors):
         return base_colors[mati]
@@ -709,8 +716,8 @@ def update_ei_and_text_faces(ob):
 
         line = str(len(ugverts)) + "("
         for j in range(len(ugverts) - 1):
-            line += str(ugverts[j].bi) + " "
-        line += str(ugverts[-1].bi) + ")\n"
+            line += str(ugverts[j].ei) + " "
+        line += str(ugverts[-1].ei) + ")\n"
         return line
 
     def reset_ei():
@@ -736,6 +743,8 @@ def update_ei_and_text_faces(ob):
         # Go through each internal face of cells and number cells and
         # internal faces
         for c in clist:
+            if c.deleted:
+                continue
             c.ei = cei # Set cell index
             for f in c.ugfaces:
                 if f.deleted:

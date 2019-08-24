@@ -72,13 +72,14 @@ class UGFace:
 
 
     def invert_face_dir(self):
-        '''Invert face directions. Swaps face owner and neighbour cells
-        and inverts face ugverts to mirror face normal vector.
+        '''Invert face direction. Swap face owner and neighbour cells
+        and reverse face ugverts to mirror PolyMesh face normal vector.
         '''
         c = self.owner
         self.owner = self.neighbour
         self.neighbour = c
-        self.ugverts = list(reversed(self.ugverts))
+        self.ugverts.reverse() # Nicer than list(reversed(self.ugverts))
+
 
 
 class UGVertex:
