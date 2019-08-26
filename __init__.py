@@ -173,6 +173,8 @@ class VIEW3D_PT_UG_GUI:
         row = layout.row()
         row.operator("unstructured_grids.polymesh_to_ug", text="Restore from Storage")
         row = layout.row()
+        row.operator("unstructured_grids.reset_view", text="Reset View")
+        row = layout.row()
         row.operator("unstructured_grids.export_openfoam_polymesh", text="Export PolyMesh")
 
         row = layout.row()
@@ -184,6 +186,15 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
+
+        # Object Mode warning
+        if context.mode == 'OBJECT':
+            box = layout.box()
+            col = box.column(align=True)
+            row = col.row(align=True)
+            row.label(text="Note: Deletions are not shown")
+            row = col.row(align=True)
+            row.label(text="correctly in Object Mode")
 
 
 class VIEW3D_PT_UG_GUI_Object(bpy.types.Panel, VIEW3D_PT_UG_GUI):
@@ -212,6 +223,7 @@ classes = (
     io_polymesh.UG_OT_PolyMeshToUG,
     ug_op.UG_OT_SelectCellsInclusive,
     ug_op.UG_OT_SelectCellsExclusive,
+    ug_op.UG_OT_ResetView,
     ug_op.UG_OT_DeleteCells,
 )
 

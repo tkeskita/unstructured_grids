@@ -34,7 +34,7 @@ class UG_OT_SelectCellsInclusive(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+        return context.mode == 'EDIT_MESH' and ug.exists_ug_state()
 
     def execute(self, context):
         n = select_cells_inclusive()
@@ -112,7 +112,7 @@ class UG_OT_SelectCellsExclusive(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+        return context.mode == 'EDIT_MESH' and ug.exists_ug_state()
 
     def execute(self, context):
         n = len(select_cells_exclusive())
@@ -187,13 +187,67 @@ def select_vertices_from_ugfaces(ob, flist):
     return n
 
 
+class UG_OT_ResetView(bpy.types.Operator):
+    '''Reset view in Edit Mode. Show boundary faces and hide deleted faces and verts'''
+
+    bl_idname = "unstructured_grids.reset_view"
+    bl_label = "Reset View (UG)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+
+    def execute(self, context):
+        reset_view()
+        self.report({'INFO'}, "View has been reset")
+        return {'FINISHED'}
+
+
+def reset_view():
+    '''Reset view in Edit Mode. Show boundary faces and hide deleted faces and verts'''
+
+    # Note: Hidden elements show up correctly only in Edit Mode.
+
+    import bmesh
+    ob = ug.get_ug_object()
+    bpy.ops.object.mode_set(mode = 'EDIT')
+
+    bm = bmesh.from_edit_mesh(ob.data)
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+
+    nf = 0 # number of hidden faces
+    nv = 0 # number of hidden vertices
+
+    for f in ug.ugfaces:
+        if f.bi < 0:
+            continue
+        if f.deleted:
+            bm.faces[f.bi].hide_set(True)
+        else:
+            bm.faces[f.bi].hide_set(False)
+            nf += 1
+    for v in ug.ugverts:
+        if v.deleted:
+            bm.verts[v.bi].hide_set(True)
+        else:
+            bm.verts[f.bi].hide_set(False)
+            nv += 1
+
+    bmesh.update_edit_mesh(mesh=ob.data)
+    bm.free()
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    l.debug("Hidden faces: %d, hidden verts: %d" % (nf, nv))
+
+
 ###########################
 ##### CELL OPERATIONS #####
 ###########################
 
 
 class UG_OT_DeleteCells(bpy.types.Operator):
-    '''Delete whole cells in current vertex selection'''
+    '''Delete cells covered by current vertex selection'''
 
     bl_idname = "unstructured_grids.delete_cells"
     bl_label = "Delete Cells (UG)"
@@ -212,117 +266,132 @@ def delete_cells_from_vertex_selection():
     '''Delete cells in current vertex selection'''
 
     clist = select_cells_exclusive()
+
+    bfacelist = [] # new boundary face list
+    delfacelist = [] # deletion face list
+
+    # Delete each cell and collect list of new boundary faces and
+    # faces to be deleted
     for c in clist:
-        delete_cell(c)
+        bfacelist, delfacelist = delete_cell(c, bfacelist, delfacelist)
         if fulldebug: l.debug("Deleted cell %d" % c.ii)
+
+    l.debug("New boundary faces: %d" % len(bfacelist))
+    l.debug("Old boundary faces for deletion: %d" % len(delfacelist))
+
+    # Mark unused vertices as deleted
+    delete_vertices_of_deleted_cell(clist)
+
+    # Add faces to geometry for new boundary faces
+    add_faces_i2b(bfacelist)
+
+    # Hide old boundary faces and deleted vertices
+    reset_view()
+
     return len(clist)
 
 
-def delete_cell(c):
-    '''Delete argument UGCell'''
+def delete_cell(c, bfacelist, delfacelist):
+    '''Delete argument UGCell c. Append list of boundary faces for
+    deletion (bfacelist) and list of internal faces for transformation
+    into boundary faces (delfacelist). Return both lists updated.
+    '''
 
-    # Process faces: Delete boundary faces and transform internal
-    # faces to boundary faces
     for f in c.ugfaces:
-        # internal face, c is owner
         if f.owner == c and f.neighbour != None:
+            if fulldebug: l.debug("internal face, c is owner")
             f.invert_face_dir()
-            convert_face_i2b(f)
+            f.neighbour = None
+            bfacelist.append(f)
 
-        # internal face, c is neighbour
         elif f.neighbour == c:
-            convert_face_i2b(f)
+            if fulldebug: l.debug("internal face, c is neighbour")
+            f.neighbour = None
+            bfacelist.append(f)
 
-        # c is boundary face
         elif f.neighbour == None:
-            delete_boundary_face(f)
+            if fulldebug: l.debug("boundary face")
+            f.deleted = True
+            f.owner = None
+            # Remove face from new boundary face list if needed
+            if f in bfacelist:
+                bfacelist.pop(bfacelist.index(f))
+            delfacelist.append(f)
 
     # Mark cell as deleted
     c.deleted = True
 
-    # Mark unused vertices as deleted
-    delete_vertices_of_deleted_cell(c)
+    return bfacelist, delfacelist
 
 
-def convert_face_i2b(f):
-    '''Convert internal face into boundary face'''
+def delete_vertices_of_deleted_cell(clist):
+    '''Delete unused UGVertices after deletion of argument UGCell list.
+    Return list of deleted ugverts
+    '''
+
+    n = 0
+    vlist = []
+    for c in clist:
+        for v in c.ugverts:
+            cellFound = False
+            for vc in v.ugcells:
+                if vc.deleted:
+                    continue
+                cellFound = True
+                break
+            if not cellFound and v not in vlist:
+                v.deleted = True
+                vlist.append(v)
+                n += 1
+    l.debug("Deleted verts: %d" % n)
+    return vlist
+
+
+def add_faces_i2b(flist):
+    '''Add faces to geometry for internal UGFaces turned into boundary faces'''
 
     import bmesh
-
-    # Debug safety check
-    if fulldebug:
-        if f.owner == None or f.neighbour == None:
-            l.error("Not internal face")
-        if f.owner.deleted:
-            l.error("Cell %d is deleted" % f.owner.ii)
-
-    # Mark as boundary face
-    f.neighbour = None
 
     # Add new face to geometry
     ob = ug.get_ug_object()
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
+    nPolys = ob.data.polygons[-1].index # Number of faces initially
+
     bm = bmesh.from_edit_mesh(ob.data)
     bm.faces.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.verts.ensure_lookup_table()
-    bvlist = []
-    for v in f.ugverts:
-        bvlist.append(bm.verts[v.bi])
-    bf = bm.faces.new(bvlist)
+
+    for f in flist:
+        bvlist = []
+        for v in f.ugverts:
+            bvlist.append(bm.verts[v.bi])
+        bf = bm.faces.new(bvlist)
+        if not bf:
+            l.error("Could not create face " + str(bvlist))
+
+    bm.verts.index_update()
+    bm.edges.index_update()
     bm.faces.index_update()
     bmesh.update_edit_mesh(mesh=ob.data)
     bm.free()
+
     # Refresh modified mesh
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
 
-    # Set face index
-    f.bi = ob.data.polygons[-1].index
-    if fulldebug: l.debug("New face bi %d" % f.bi)
-    set_face_boundary_to_default(f)
+    # Set face indices
+    for f in flist:
+        nPolys += 1
+        f.bi = nPolys
+
+    set_faces_boundary_to_default(flist)
+    l.debug("Converted faces: %d" % len(flist))
 
 
-def delete_boundary_face(f):
-    '''Delete argument boundary UGFace'''
-
-    # Debug safety check
-    if fulldebug:
-        if f.neighbour != None:
-            l.error("Not boundary face")
-        if f.owner.deleted:
-            l.error("Cell %d is deleted" % f.owner.ii)
-
-    # Hide face in mesh. Hiding seems to work only in Object Mode.
-    # And it seems to only show up correctly in Edit Mode.
-    ob = ug.get_ug_object()
-    bpy.ops.object.mode_set(mode = 'OBJECT')
-    ob.data.polygons[f.bi].hide = True
-    bpy.ops.object.mode_set(mode = 'EDIT')
-
-    # Mark face as deleted
-    f.deleted = True
-
-
-def delete_vertices_of_deleted_cell(c):
-    '''Delete unused UGVertices after deletion of argument UGCell'''
-
-    for v in c.ugverts:
-        cellFound = False
-        for vc in v.ugcells:
-            if vc.deleted:
-                continue
-            if vc == c:
-                continue
-            cellFound = True
-            break
-        if not cellFound:
-            v.deleted = True
-
-
-def set_face_boundary_to_default(f):
-    '''Set material (boundary patch) of argument UGFace to default'''
+def set_faces_boundary_to_default(flist):
+    '''Set material (boundary patch) of argument UGFaces to default'''
 
     matname = 'default'
     ob = ug.get_ug_object()
@@ -335,9 +404,13 @@ def set_face_boundary_to_default(f):
             break
     if not patch:
         patch = ug.UGBoundary(matname)
+
+    if 'default' in bpy.data.materials:
+        mat = bpy.data.materials['default']
+    else:
         mat = bpy.data.materials.new(name=matname)
         bpy.ops.object.material_slot_add()
-        ob.active_material = mat
+    ob.active_material = mat
 
     # Find slot index for default material:
     for mati in range(len(ob.material_slots)):
@@ -345,5 +418,6 @@ def set_face_boundary_to_default(f):
             break
 
     bpy.ops.object.mode_set(mode = 'OBJECT')
-    ob.data.polygons[f.bi].material_index = mati
+    for f in flist:
+        ob.data.polygons[f.bi].material_index = mati
     bpy.ops.object.mode_set(mode = 'EDIT')
