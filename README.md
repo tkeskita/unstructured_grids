@@ -67,10 +67,10 @@ Currently implemented features include:
 
 - Unstructured grid data is saved as text strings (UG Storage) inside Blend files.
 
-- Undo (CTRL + Z) is not working correctly, but undo is supported indirectly:
-  Use operator *Update UG Data and Storage from Blender* to sync
-  changes made in Blender for safekeeping in UG Storage. To undo, use
-  operator *Restore UG Data from UG Storage*.
+- Undo (CTRL + Z) is not working correctly, but one-step undo is
+  supported indirectly: Use *Update to Storage* to sync changes made
+  in Blender for safekeeping in UG Storage. To undo, use *Restore from
+  Storage*.
 
 - Boundary face patches can be changed by assigning material for faces
 
@@ -105,9 +105,7 @@ Currently implemented features include:
 ## Development Ideas for Future
 
 - Extrusion of new cells (one or several layers) from selected faces.
-  At least initially this would be without any sense of topology (no
-  detection of corners or inward edges, just create side boundary
-  faces blindly).
+  Extrusion direction would be based on vertex normals.
 
 - Merge selected cells
 
@@ -116,6 +114,26 @@ Currently implemented features include:
 - Subdivision of cells to produce smaller cells
 
 - Import/export of VTK Unstructured Grids
+
+- Add Show Cells operator (creates temporary object with faces around
+  selected cells)
+
+- Add Fix Intersecting Boundaries operator (move boundary vertices so
+  that boundary faces don't intersect each other)
+
+- Improve extrusion of new cells. Method could be improved by
+  including smoothing of vertex normals, and extrusion length could be
+  based on neighbour face-to-face angles or vertex normal angles to
+  create hypergeometric extrusions, something like
+  [PyHyp](https://github.com/mdolab/pyhyp) does.
+
+- Mesh Quality metrics + operator to select bad cells. Definition of
+  bad cells depend on target simulation type, so there would need to
+  be several metrics. This would be nice-to-have but not essential,
+  since it is possible to use *checkMesh* utility of OpenFOAM, or
+  e.g. Mesh Quality filter in Paraview or e.g.
+  [BVTKNodes](https://github.com/tkeskita/BVtkNodes)
+  to evaluate mesh quality.
 
 
 ### OpenFOAM Trade Mark Notice
