@@ -37,6 +37,7 @@ if "bpy" in locals():
     importlib.reload(ug)
     importlib.reload(io_polymesh)
     importlib.reload(ug_op)
+    importlib.reload(ug_op_extrude)
 else:
     import math
     import bpy
@@ -44,6 +45,7 @@ else:
         ug,
         io_polymesh,
         ug_op,
+        ug_op_extrude,
         )
     from bpy.app.handlers import persistent
 
@@ -225,6 +227,7 @@ classes = (
     ug_op.UG_OT_SelectCellsExclusive,
     ug_op.UG_OT_ResetView,
     ug_op.UG_OT_DeleteCells,
+    ug_op_extrude.UG_OT_ExtrudeCells,
 )
 
 def register():
