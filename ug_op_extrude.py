@@ -22,6 +22,7 @@
 
 import bpy
 from . import ug
+from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 fulldebug = True # Set to True if you wanna see walls of logging debug
@@ -33,18 +34,77 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode == 'EDIT_MESH' and ug.exists_ug_state()
+        return context.mode in {'OBJECT', 'EDIT_MESH'}
 
     def execute(self, context):
-        n = extrude_cells()
+        initialization_ok, initial_faces = initialize_extrusion()
+        if not initialization_ok:
+            self.report({'ERROR'}, "Can't initialize from object named " \
+                        + "%r" % ug.obname)
+            return {'FINISHED'}
+        n = extrude_cells(initial_faces)
         if not n:
             self.report({'ERROR'}, "No object %r" % ug.obname)
         self.report({'INFO'}, "Extruded %d new cells" % n)
         return {'FINISHED'}
 
 
-def extrude_cells():
-    '''Extrude new cells from current face selection'''
+def initialize_extrusion():
+    '''Initialize UG data for extrusion. For a new unstructured grid,
+    create UG object and UGFaces from faces of active object.
+    Return values are boolean for successful initialization and
+    list of initial faces (if initializing from faces when no cells exist).
+    '''
+
+    initial_faces = [] # List of new UGFaces
+
+    # Do nothing if there is already an UG state
+    if ug.exists_ug_state():
+        return True, initial_faces
+
+    source_ob = bpy.context.active_object
+    if source_ob.name == ug.obname:
+        return False, initial_faces
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    ob = ug.initialize_ug_object()
+
+    import bmesh
+    bm = bmesh.from_edit_mesh(source_ob.data)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    for i in range(len(bm.verts)):
+        ug.UGVertex(i)
+    l.debug("Initial vertex count: %d" % len(ug.ugverts))
+
+    for i in range(len(bm.faces)):
+        verts_ind = [v.index for v in bm.faces[i].verts]
+        uf = ug.UGFace(verts_ind)
+        uf.bi = i
+        initial_faces.append(uf)
+    l.debug("Initial Face count: %d" % len(ug.ugfaces))
+
+    bm.to_mesh(ob.data)
+    bm.free()
+
+    # Hide everything else than UG object
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    for obj in bpy.data.objects:
+        obj.select_set(False)
+        obj.hide_set(True)
+    ob.hide_set(False)
+    ob.select_set(True)
+    bpy.ops.object.mode_set(mode = 'EDIT')
+
+    return True, initial_faces
+
+
+def extrude_cells(initial_faces=None):
+    '''Extrude new cells from current face selection. Initial faces
+    argument provides optional list of initial UGFaces whose direction
+    is reversed at the end.
+    '''
 
     import bmesh
     ob = ug.get_ug_object()
@@ -56,13 +116,6 @@ def extrude_cells():
     faces = [f for f in bm.faces if f.select]
     l.debug("Face count: %d" % len(faces))
 
-    # Extrusion length, TODO
-    extrude_len = 0.01
-
-    # Create new vertices (cast extrude length towards vertex normal direction)
-    # Create list of boundary faces and cells to be created
-    # Create new faces and hide/delete old faces
-    # Create new cells
 
     def cast_vertices(bm, faces):
         '''Create new vertices from vertices of faces in argument bmesh, by
@@ -71,8 +124,12 @@ def extrude_cells():
         '''
 
         processed_verts = [] # List of processed vertices
-        vert_map = {} # Dictionary mapping original face vertices to new vertices
-        bverts = [] # List of boundary vertices
+        vert_map = {} # Dictionary for mapping original face verts to new verts
+        ind = bm.verts[-1].index # Index of last vertex
+
+        # Extrusion length, TODO
+        extrude_len = 0.01
+
         for f in faces:
             for v in f.verts:
                 if v in processed_verts:
@@ -82,87 +139,177 @@ def extrude_cells():
                 newco = v.co + extrude_len * v.normal
                 v2 = bm.verts.new(newco)
                 vert_map[v] = v2
+                # Create new UGVertex
+                ind += 1
+                ug.UGVertex(ind)
 
+        bm.verts.ensure_lookup_table()
+        bm.verts.index_update()
         return bm, vert_map
 
     bm, vert_map = cast_vertices(bm, faces)
 
 
-    def find_boundary_edges(bm, faces):
-        '''Find boundary edges within faces'''
+    def point_neighbour_cell_to_internal_face(e, nc, nf0, bm, vert_map):
+        '''Help function to set neighbour cell of the face which is extruded
+        from edge e (old face) to point to UGCell index nc. This
+        function is called for faces which have been already extruded
+        and have an owner, so neighbour cell needs only to point to
+        that face.
+        '''
 
-        edges = [] # Boundary edge list
-        processed_edges = [] # List of already processed edges
+        # First find the existing extruded mesh face index (efi) from
+        # edge e. Face index is searched after nf0.
+        e0 = e.verts[0]
+        e1 = e.verts[1]
+        verts = [e0, vert_map[e0], vert_map[e1], e1]
+        bm.faces.ensure_lookup_table()
+
+        test = True
+        fi = -1 # mesh face index
+        found = False
+        for i in range(nf0, len(bm.faces)):
+            test = True
+            for v in verts:
+                if v not in bm.faces[i].verts:
+                    test = False
+                    break
+            if test:
+                fi = i
+                found = True
+                break
+
+        if not found:
+            l.error("Sanity violation: Did not find extruded face")
+            return False
+
+        if fulldebug: l.debug("fi %d, nc %d" % (fi, nc))
+
+        # Set the neighbour cell
+        new_cell = ug.ugcells[nc]
+        old_face = ug.get_ugface_from_face_index(fi)
+        old_face.neighbour = new_cell
+        # Add face to cell faces
+        new_cell.add_face_info(old_face)
+        return True
+
+    def create_faces(bm, faces, vert_map):
+        '''Main extrusion function. Create faces to boundary sides and top of
+        extrusion.
+        '''
+
+        nc = len(ug.ugcells) # Index number of cells
+        nf0 = len(bm.faces) # Initial index number of mesh faces
+        nf = 0 # Number of faces created
+        processed_edges = [] # List of processed edges
+        newfaces = [] # List of new UGFaces
+
+        # TODO: Bulky function, refactor to smaller pieces
+
+        # Create a new UGCell for each extruded face
         for f in faces:
+            ug.UGCell()
+        if fulldebug: l.debug("Cell count: %d" % len(ug.ugcells))
+
+        # Extrusion tasks are done for each new cell, whose extrusion
+        # base face is f.
+        for f in faces:
+            new_cell = ug.ugcells[nc]
+
+            # 1. Extrude faces from base face edges
+
             for e in f.edges:
-                if e in edges:
-                    continue
-                if e.select == False:
-                    continue
+                # For existing (internal) faces, add only neighbour cell info
                 if e in processed_edges:
+                    test = point_neighbour_cell_to_internal_face(e, nc, nf0, bm, vert_map)
+                    if not test:
+                        return None, None
                     continue
                 processed_edges.append(e)
-                edge_faces = [f2 for f2 in faces if e in f2.edges]
-                if len(edge_faces) < 2:
-                    edges.append(e)
-                    if fulldebug: l.debug("Edge %d is boundary" % e.index)
-                else:
-                    if fulldebug: l.debug("Edge %d is internal" % e.index)
 
-        return edges
-
-    b_edges = find_boundary_edges(bm, faces)
-
-
-    def create_faces(bm, faces, vert_map, b_edges):
-        '''Create faces to boundary sides and extrudate top'''
-
-        # Create side faces at boundary edges
-        for f in faces:
-            for e in f.edges:
-                if e not in b_edges:
-                    continue
-                # Create new side face
+                # For new faces, create new face to bmesh
                 e0 = e.verts[0]
                 e1 = e.verts[1]
-                side_verts = [e0, vert_map[e0], vert_map[e1], e1]
-                f2 = bm.faces.new(side_verts)
+                verts = [e0, vert_map[e0], vert_map[e1], e1]
+                f2 = bm.faces.new(verts)
                 f2.normal_update()
-                # Flip face normal if face normal points "inside"
-                # Use edge center to face center as reference vector
+
+                # Flip face normal if face normal points inside of new cell.
+                # Uses edge center to original face center as reference vector.
+                # Cells are required to be convex for this to work correctly.
                 edgevec = 0.5*(e0.co+e1.co)
                 refvec = f.calc_center_median() - edgevec
                 refvec.normalize()
                 cos_epsilon = f2.normal @ refvec
                 if fulldebug:
                     l.debug("f2.normal:%s, refvec:%s" %(str(f2.normal), str(refvec)))
-                    l.debug("cos_epsilon of %d is %f" % (f.index, cos_epsilon))
+                    l.debug("cos_epsilon = %f" % cos_epsilon)
                 if (cos_epsilon > 0.0):
                     f2.normal_flip()
                     f2.normal_update()
-                    if fulldebug:
-                        l.debug("Flipped boundary face normal")
+                    if fulldebug: l.debug("Flipped face normal")
 
-        # Create face at top of extrusion
-        for f in faces:
+                # Create UGFace
+                verts_ind = [x.index for x in f2.verts]
+                if fulldebug: l.debug("Vertex indices: %s" % str(verts_ind))
+                uf = ug.UGFace(verts_ind)
+                uf.bi = len(bm.faces) - 1
+                newfaces.append(uf)
+                uf.owner = new_cell
+                new_cell.add_face_info(uf)
+                nf += 1
+
+            # 2. Add new cell information to original base face.
+            # Base face is always set as neighbour. If base face is
+            # not originally part of any cell, it's face normal will
+            # be flipped later on, and new cell becomes owner then.
+            orig_face = ug.get_ugface_from_face_index(f.index)
+            orig_face.neighbour = new_cell
+            if fulldebug: l.debug("Set face %d owner to %d" %(f.index, new_cell.ii))
+            new_cell.add_face_info(orig_face)
+
+            # 3. Create face at top of extrusion
+
             topverts = []
             for i in f.verts:
                 topverts.append(vert_map[i])
             ftop = bm.faces.new(topverts)
-            ftop.normal_update()
-            # Flip top face normal if it is opposite to original face normal
-            # TODO: Need to implement or not?
 
-            # Select new faces and deselect original faces
+            # Create UGFace
+            verts_ind = [x.index for x in ftop.verts]
+            if fulldebug: l.debug("Top face vertex indices: %s" % str(verts_ind))
+            uf = ug.UGFace(verts_ind)
+            uf.bi = len(bm.faces) - 1
+            newfaces.append(uf)
+            uf.owner = new_cell
+            # Add UGFace (and it's UGVerts) to UGCell
+            new_cell.add_face_info(uf)
+            nf += 1
+
+            # 4. Finishing. Select new faces and deselect original faces
+
             f.select_set(False)
             ftop.select_set(True)
+            nc += 1
 
-        return bm
+        l.debug("New faces created: %d" % nf)
+        return bm, newfaces
 
-    bm = create_faces(bm, faces, vert_map, b_edges)
+    bm, newfaces = create_faces(bm, faces, vert_map)
 
+    # Reverse direction of initial faces (first extrusion only)
+    bm.faces.ensure_lookup_table()
+    for f in initial_faces:
+        l.debug("Final flipping face %d" % f.bi)
+        bm.faces[f.bi].normal_flip()
+        bm.faces[f.bi].normal_update()
+        f.invert_face_dir()
+
+    bm.normal_update()
     bmesh.update_edit_mesh(mesh=ob.data)
     bm.free()
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
+    ug_op.set_faces_boundary_to_default(newfaces)
+    ug.update_ug_all_from_blender()
     return len(faces)

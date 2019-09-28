@@ -5,12 +5,14 @@
 ## Introduction
 
 Unstructured Grids (UG) is an add-on for [Blender
-2.80](https://www.blender.org) for importing, editing and exporting
-of 3D volume meshes composed of arbitrary polyhedron cells
-(a.k.a [3D unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
-Editing includes tasks like moving of selected vertices, and assigning selected
-boundary faces to named patches. The user of the add-on is assumed to know
-Blender modelling and material systems on a basic level.
+2.80](https://www.blender.org) for importing, editing and exporting of
+3D volume meshes composed of arbitrary polyhedron cells (a.k.a [3D
+unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
+Editing includes tasks like moving of selected vertices, deletion of
+existing cells, extrusion of new cells, and assignation of selected
+faces and cells to named boundaries and zones. The user of the add-on
+is assumed to know Blender modelling and material systems on a basic
+level.
 
 
 ## Features and Limitations
@@ -58,7 +60,7 @@ Blender modelling and material systems on a basic level.
 
 ## Status
 
-This add-on is currently at proof-of-concept stage and work in progress.
+This add-on is in feature development stage.
 Currently implemented features include:
 
 - Import and Export of uncompressed PolyMesh files (boundary, faces,
@@ -95,8 +97,6 @@ Currently implemented features include:
 
 - Activate the “Unstructured Grids for Blender” add-on in Preferences. Add-on is located in
   Mesh category.
-
-- Click “Save Preferences” to autoload add-on every time Blender is started
 
 - Note: Python Logging console messages may be useful in case of problems.
   More information in file *\_\_init\_\_.py*.

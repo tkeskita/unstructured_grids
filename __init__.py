@@ -189,6 +189,12 @@ class VIEW3D_PT_UG_GUI:
         row = layout.row()
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
 
+        row = layout.row()
+        row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
+
+        row = layout.row()
+        row.operator("unstructured_grids.print_info_of_selected_cells", text="Print Cell Info")
+
         # Object Mode warning
         if context.mode == 'OBJECT':
             box = layout.box()
@@ -220,6 +226,8 @@ classes = (
     ug.UG_OT_UpdateBoundariesFromFaceMaterials,
     ug.UG_OT_UpdateZonesFromVertexGroups,
     ug.UG_OT_UpdateUGAllFromBlender,
+    ug.UG_OT_PrintSelectedCellsInfo,
+    ug.UG_OT_PrintSelectedVertexIndices,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,

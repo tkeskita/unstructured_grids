@@ -46,10 +46,21 @@ class UGCell:
 
     def __init__(self):
         '''Initialize UGCell with cell index'''
+        global ugcells
         self.ugfaces = []
         self.ugverts = []
         self.ii = len(ugcells)
         ugcells.append(self)
+
+    def add_face_info(self, f):
+        '''Add argument UGFace f and it's UGVerts to cell info lists'''
+        if f in self.ugfaces:
+            return None
+        self.ugfaces.append(f)
+        for v in f.ugverts:
+            if v not in self.ugverts:
+                self.ugverts.append(v)
+                l.debug("Appended vert %d from face %d" % (v.bi, f.bi))
 
 
 class UGFace:
@@ -65,6 +76,7 @@ class UGFace:
 
     def __init__(self, verts):
         '''Initialize UGFace with vertex index list'''
+        global ugfaces
         self.ugverts = []
         for v in verts:
             self.ugverts.append(ugverts[v])
@@ -92,6 +104,7 @@ class UGVertex:
 
     def __init__(self, i):
         '''Initialize UGVertex with vertex index'''
+        global ugverts
         self.bi = i
         self.ugcells = []
         ugverts.append(self)
@@ -112,6 +125,7 @@ class UGBoundary:
 
     def __init__(self, patchname):
         '''Initialize UGBoundary with name patchname'''
+        global ugboundaries
         self.ugfaces = []
         self.patchname = patchname
         self.mati = len(ugboundaries)
@@ -132,6 +146,7 @@ class UGZone:
 
     def __init__(self, zonetype, zonename):
         '''Initialize new zone with name zone type and zone name'''
+        global ugzones
         self.ugfaces = []
         self.ugcells = []
         self.flipMap = []
@@ -217,6 +232,82 @@ def ug_print_stats():
     clist = [c for c in ugcells if c.deleted == False]
     text = "Cells: " + str(len(clist))
     return text
+
+
+class UG_OT_PrintSelectedCellsInfo(bpy.types.Operator):
+    '''Print information about selected cells'''
+    bl_idname = "unstructured_grids.print_info_of_selected_cells"
+    bl_label = "Print Selected UG Cell Info (via Python Logging)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'} and exists_ug_state()
+
+    def execute(self, context):
+        clist = ug_op.select_cells_exclusive()
+        for c in clist:
+            ug_print_cell_info(c)
+        self.report({'INFO'}, "%d cell infos printed " % len(clist) \
+                    + "to terminal (via Python Logging)")
+        return {'FINISHED'}
+
+
+def ug_print_cell_info(c):
+    '''Print information about argument cell'''
+
+    text = "Cell info:\n"
+    text += "Cell %d " % c.ii
+    if c.deleted:
+        text += "(deleted) "
+    text += "contains %d UGFaces " % len(c.ugfaces)
+    text += "and %d UGVerts\n" % len(c.ugverts)
+
+    text += "  mesh face indices: "
+    for f in c.ugfaces:
+        text += "%d " % f.bi
+    text += "\n"
+
+    text += "  face ownership: "
+    for f in c.ugfaces:
+        if f.owner == c:
+            text += "O"
+        if f.neighbour == c:
+            text += "N"
+        text += " "
+    text += "\n"
+
+    text += "  mesh vertex indices: "
+    for v in c.ugverts:
+        text += "%d " % v.bi
+    text += "\n"
+
+    # TODO: Also print to Blender text block?
+    l.debug(text)
+
+
+class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
+
+    bl_idname = "unstructured_grids.print_selected_vertex_indices"
+    bl_label = "Print Selected Vertex Indices"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'EDIT_MESH'}
+
+    def execute(self, context):
+        print_selected_vertex_indices()
+        return {'FINISHED'}
+
+
+def print_selected_vertex_indices():
+    '''Debug print indices of selected vertices'''
+
+    ob = get_ug_object()
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    verts = [v for v in ob.data.vertices if v.select]
+    for v in verts:
+        l.debug("Selected vertex %d" % v.index)
 
 
 class UG_OT_UpdateBoundariesFromFaceMaterials(bpy.types.Operator):
@@ -395,6 +486,12 @@ def update_ug_all_from_blender(self=None):
             self.report({'ERROR'}, "No cells detected in %r" % obname)
         return False
 
+    # Force refresh if in Edit Mode
+    ob = get_ug_object()
+    if ob.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode = 'OBJECT')
+        bpy.ops.object.mode_set(mode = 'EDIT')
+
     # Force update boundaries
     update_ugboundaries()
     # Force update zones
@@ -403,6 +500,17 @@ def update_ug_all_from_blender(self=None):
     io_polymesh.ugdata_to_polymesh(self)
 
     return True
+
+
+def get_ugface_from_face_index(fi):
+    '''Finds UGFace that corresponds to argument mesh face index'''
+
+    global ugfaces
+    flist = [f for f in ugfaces if f.bi == fi]
+    if len(flist) != 1:
+        l.error("Can't find ugface corresponding to mesh face index %d" % fi)
+        return None
+    return flist[0]
 
 
 ######################
