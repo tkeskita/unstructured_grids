@@ -48,6 +48,7 @@ else:
         ug_op_extrude,
         )
     from bpy.app.handlers import persistent
+    from sys import float_info
 
 # Set up logging of messages using Python logging
 # Logging is nicely explained in:
@@ -115,6 +116,13 @@ class UGProperties(bpy.types.PropertyGroup):
         name="Generate Edges for Internal Faces",
         description="Boolean for Generating Internal Face Edges",
         default=False,
+    )
+    extrusion_thickness: bpy.props.FloatProperty(
+        name="Extrusion Thickness",
+        description="Extrusion Thickness (Cell Side Length Perpendicular to Surface)",
+        default=0.05,
+        precision=4,
+        min=float_info.min, max=float_info.max
     )
 
 def menu_import(self, context):
@@ -188,6 +196,12 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
+
+        row = layout.row()
+        row.label(text="Extrusion Settings:")
+        col = layout.column()
+        rowsub = col.row(align=True)
+        rowsub.prop(ug_props, "extrusion_thickness", text="Thickness")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")

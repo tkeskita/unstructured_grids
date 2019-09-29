@@ -126,9 +126,10 @@ def extrude_cells(initial_faces=None):
         processed_verts = [] # List of processed vertices
         vert_map = {} # Dictionary for mapping original face verts to new verts
         ind = bm.verts[-1].index # Index of last vertex
+        ug_props = bpy.context.scene.ug_props
 
-        # Extrusion length, TODO
-        extrude_len = 0.01
+        # Extrusion length
+        extrude_len = ug_props.extrusion_thickness
 
         for f in faces:
             for v in f.verts:
