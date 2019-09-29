@@ -124,6 +124,11 @@ class UGProperties(bpy.types.PropertyGroup):
         precision=4,
         min=float_info.min, max=float_info.max
     )
+    extrusion_ignores_unselected_face_normals: bpy.props.BoolProperty(
+        name="Ignore Unselected Face Normals",
+        description="Ignore Unselected Face Normals in Extrusion Direction",
+        default=True,
+    )
 
 def menu_import(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
@@ -202,6 +207,8 @@ class VIEW3D_PT_UG_GUI:
         col = layout.column()
         rowsub = col.row(align=True)
         rowsub.prop(ug_props, "extrusion_thickness", text="Thickness")
+        rowsub.prop(ug_props, "extrusion_ignores_unselected_face_normals",
+                    icon='NORMALS_FACE', text="")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")

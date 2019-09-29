@@ -117,13 +117,49 @@ def extrude_cells(initial_faces=None):
     l.debug("Face count: %d" % len(faces))
 
 
+    def calculate_extrusion_dir_and_coeffs(verts):
+        '''Calculate normalized extrusion direction vector and length
+        coefficients based on angles of surrounding faces. Return
+        dictionaries of directions and coeffs for each argument mesh
+        vertex.
+        '''
+
+        from mathutils import Vector
+        vdir = dict() # extrusion directions to be calculated
+        coeffs = dict() # extrusion length coefficients to be calculated
+        ug_props = bpy.context.scene.ug_props
+
+        for v in verts:
+            # Default extrusion direction is calculated as average of
+            # surrounding face normal vectors.
+            n = 0
+            vec = Vector((0, 0, 0))
+            for f in v.link_faces:
+                fi = f.index
+                uf = ug.get_ugface_from_face_index(fi)
+                if uf.deleted:
+                    continue
+                if uf.neighbour != None:
+                    continue
+                if ug_props.extrusion_ignores_unselected_face_normals:
+                    if f.select == False:
+                        continue
+                vec += f.normal
+                n += 1
+            vdir[v] = vec / float(n)
+
+            # Length coefficient, TODO
+            coeffs[v] = 1.0
+        return vdir, coeffs
+
+
     def cast_vertices(bm, faces):
         '''Create new vertices from vertices of faces in argument bmesh, by
         casting each vertex towards vertex normal direction. Return
         updated bmesh and vertex mapping dictionary.
         '''
 
-        processed_verts = [] # List of processed vertices
+        orig_verts = [] # List of vertices from which to cast new verts
         vert_map = {} # Dictionary for mapping original face verts to new verts
         ind = bm.verts[-1].index # Index of last vertex
         ug_props = bpy.context.scene.ug_props
@@ -131,18 +167,24 @@ def extrude_cells(initial_faces=None):
         # Extrusion length
         extrude_len = ug_props.extrusion_thickness
 
+        # Find the original verts
         for f in faces:
             for v in f.verts:
-                if v in processed_verts:
+                if v in orig_verts:
                     continue
-                processed_verts.append(v)
+                orig_verts.append(v)
 
-                newco = v.co + extrude_len * v.normal
-                v2 = bm.verts.new(newco)
-                vert_map[v] = v2
-                # Create new UGVertex
-                ind += 1
-                ug.UGVertex(ind)
+        # Calculate extrusion direction and length coefficients for vertices
+        vdir, coeffs = calculate_extrusion_dir_and_coeffs(orig_verts)
+
+        # Cast new vertices
+        for v in orig_verts:
+            newco = v.co + extrude_len * vdir[v] * coeffs[v]
+            v2 = bm.verts.new(newco)
+            vert_map[v] = v2
+            # Create new UGVertex
+            ind += 1
+            ug.UGVertex(ind)
 
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
