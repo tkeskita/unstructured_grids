@@ -71,6 +71,21 @@ def initialize_extrusion():
 
     import bmesh
     bm = bmesh.from_edit_mesh(source_ob.data)
+
+    # Delete unselected faces
+    facelist = []
+    for f in bm.faces:
+        if f.select == False:
+            facelist.append(f)
+    bmesh.ops.delete(bm, geom=facelist, context='FACES_ONLY')
+
+    # Delete leftover verts which are not part of any faces
+    vertlist = []
+    for v in bm.verts:
+        if len(v.link_faces) == 0:
+            vertlist.append(v)
+    bmesh.ops.delete(bm, geom=vertlist, context='VERTS')
+
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
