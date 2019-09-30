@@ -37,14 +37,24 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         return context.mode in {'OBJECT', 'EDIT_MESH'}
 
     def execute(self, context):
+        # Initialize from selected faces if needed
         initialization_ok, initial_faces = initialize_extrusion()
         if not initialization_ok:
-            self.report({'ERROR'}, "Can't initialize from object named " \
-                        + "%r" % ug.obname)
+            self.report({'ERROR'}, "Initialization failed. Maybe " \
+                        + "no faces were selected, or object name is " \
+                        + "%r?" % ug.obname)
             return {'FINISHED'}
-        n = extrude_cells(initial_faces)
-        if not n:
-            self.report({'ERROR'}, "No object %r" % ug.obname)
+
+        # Repeat layer extrusion
+        ug_props = bpy.context.scene.ug_props
+        n = 0
+        for i in range(ug_props.extrusion_layers):
+            n += extrude_cells(initial_faces)
+            initial_faces = [] # Not to be used after initial extrusion
+            if n == 0:
+                self.report({'ERROR'}, "No object %r" % ug.obname)
+                return {'FINISHED'}
+
         self.report({'INFO'}, "Extruded %d new cells" % n)
         return {'FINISHED'}
 
@@ -88,6 +98,10 @@ def initialize_extrusion():
 
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+
+    if len(bm.faces) == 0:
+        ug.delete_ug_object()
+        return False, initial_faces
 
     for i in range(len(bm.verts)):
         ug.UGVertex(i)

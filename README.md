@@ -86,6 +86,8 @@ Currently implemented features include:
 
 - Deletion of selected cells to carve voids into the domain.
 
+- Extrusion of new cells (one or several layers) from selected faces.
+
 
 ## Installation
 
@@ -103,9 +105,6 @@ Currently implemented features include:
 
 
 ## Development Ideas for Future
-
-- Extrusion of new cells (one or several layers) from selected faces.
-  Extrusion direction would be based on vertex normals.
 
 - Merge selected cells
 
