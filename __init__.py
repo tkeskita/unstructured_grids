@@ -140,6 +140,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1,
         min=1, max=10000000
     )
+    extrusion_scale_thickness_expression: bpy.props.StringProperty(
+        name="Layer Thickness (x) Scaling Expression",
+        description="Python Expression to Scale Layer Thickness After Layer Addition",
+        default="x*1.0",
+        maxlen=0,
+    )
 
 def menu_import(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
@@ -225,6 +231,11 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.prop(ug_props, "extrusion_thickness", text="Thickness")
+
+        row = layout.row()
+        row.label(text="Expression for Scaling Thickness:")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")

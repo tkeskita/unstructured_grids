@@ -61,7 +61,8 @@ class UGCell:
         for v in f.ugverts:
             if v not in self.ugverts:
                 self.ugverts.append(v)
-                l.debug("Appended vert %d from face %d" % (v.bi, f.bi))
+                if fulldebug:
+                    l.debug("Appended vert %d from face %d" % (v.bi, f.bi))
 
 
 class UGFace:

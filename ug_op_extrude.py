@@ -25,7 +25,7 @@ from . import ug
 from . import ug_op
 import logging
 l = logging.getLogger(__name__)
-fulldebug = True # Set to True if you wanna see walls of logging debug
+fulldebug = False # Set to True if you wanna see walls of logging debug
 
 class UG_OT_ExtrudeCells(bpy.types.Operator):
     '''Extrude new cells from current face selection'''
@@ -235,6 +235,16 @@ def extrude_cells(initial_faces, vdir):
 
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
+
+        # Update layer thickness using expression by user
+        x = extrude_len
+        expr = ug_props.extrusion_scale_thickness_expression
+        try:
+            rval = eval(expr)
+            l.debug("Expression returned %s" % str(rval))
+            ug_props.extrusion_thickness = float(rval)
+        except:
+            l.error("Error in evaluating: %r" % expr)
 
         return bm, vert_map, save_vdir
 
