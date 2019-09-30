@@ -126,7 +126,12 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_ignores_unselected_face_normals: bpy.props.BoolProperty(
         name="Ignore Unselected Face Normals",
-        description="Ignore Unselected Face Normals in Extrusion Direction",
+        description="Ignore Unselected Neighbour Face Normals in Calculation of Extrusion Direction",
+        default=True,
+    )
+    extrusion_uses_fixed_initial_directions: bpy.props.BoolProperty(
+        name="Use Fixed Extrusion Directions",
+        description="Use Initial Normal Directions for All Layers in Extrusion",
         default=True,
     )
     extrusion_layers: bpy.props.IntProperty(
@@ -215,6 +220,8 @@ class VIEW3D_PT_UG_GUI:
         rowsub.prop(ug_props, "extrusion_layers", text="Layers")
         rowsub.prop(ug_props, "extrusion_ignores_unselected_face_normals",
                     icon='NORMALS_FACE', text="")
+        rowsub.prop(ug_props, "extrusion_uses_fixed_initial_directions",
+                    icon='NORMALS_VERTEX_FACE', text="")
 
         row = layout.row()
         row.prop(ug_props, "extrusion_thickness", text="Thickness")

@@ -21,6 +21,7 @@
 # Core classes and routines for Unstructured Grids
 
 import bpy
+from mathutils import Vector
 from . import ug_op
 from . import io_polymesh
 import logging
@@ -70,6 +71,9 @@ class UGFace:
     owner = None # UGCell owning this face
     neighbour = None # UGCell neighbouring this face
     bi = -1 # Blender face index corresponding to this UGFace
+            # Note: mapping from mesh face to ugface does NOT work
+            # like ugfaces[face.index]. Instead, use function
+            # get_ugface_from_face_index()
     ei = -1 # Face index (used at export only)
     mati = -1 # Blender material slot index number
     ugverts = [] # list of ordered ugverts used by this face
@@ -99,6 +103,9 @@ class UGVertex:
 
     deleted = False # boolean for marking deleted vertex
     bi = -1 # Blender vertex index corresponding to this UGVertex
+            # Note: mapping between mesh vertices and ugverts should
+            # always work in both ways, like:
+            # ug.ugverts[vert.index] or: bm.verts[ugvert.bi]
     ei = -1 # Vertex index (used at export only)
     ugcells = [] # List of ugcells that this vertex is part of
 
@@ -159,6 +166,17 @@ class UGZone:
 ##### HELP FUNCTIONS #####
 ##########################
 
+def delete_ug_object():
+    '''Delete UG mesh object'''
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    l.debug("Delete existing object " + obname)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.data.objects[obname].select_set(True)
+    mesh = bpy.data.objects[obname].data
+    bpy.ops.object.delete()
+    bpy.data.meshes.remove(mesh)
+
 
 def initialize_ug_object():
     '''Creates and returns an initialized and empty UG mesh object and
@@ -177,13 +195,7 @@ def initialize_ug_object():
     # Initialize mesh object
     ob = get_ug_object()
     if ob:
-        bpy.ops.object.mode_set(mode='OBJECT')
-        l.debug("Delete existing object " + obname)
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.data.objects[obname].select_set(True)
-        mesh = bpy.data.objects[obname].data
-        bpy.ops.object.delete()
-        bpy.data.meshes.remove(mesh)
+        delete_ug_object()
 
     l.debug("Create and activate new mesh object " + obname)
     mesh_data = bpy.data.meshes.new(obname)
