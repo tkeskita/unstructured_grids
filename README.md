@@ -57,6 +57,10 @@ level.
 
   - Scaling/moving/rotation of a selected part of the mesh
 
+  <p align="left"><img src="examples/ug_extrude_and_twist.png"></p>
+
+  - Extrude a mesh profile (on left), and twist the result (on right)
+
 
 ## Status
 
@@ -86,7 +90,8 @@ Currently implemented features include:
 
 - Deletion of selected cells to carve voids into the domain.
 
-- Extrusion of new cells (one or several layers) from selected faces.
+- Extrusion of new cells (one or several layers) from selected faces
+  (to be improved still, now quite slow).
 
 
 ## Installation
