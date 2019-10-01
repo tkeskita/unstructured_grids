@@ -167,6 +167,18 @@ class UGZone:
 ##### HELP FUNCTIONS #####
 ##########################
 
+def hide_other_objects():
+    '''Hides and deselects all other objects except UG object from view'''
+
+    for ob in bpy.data.objects:
+        ob.select_set(False)
+        ob.hide_set(True)
+    ob = get_ug_object()
+    if ob:
+        ob.hide_set(False)
+        ob.select_set(True)
+
+
 def delete_ug_object():
     '''Delete UG mesh object'''
 

@@ -168,9 +168,6 @@ class UG_OT_PolyMeshToUG(bpy.types.Operator):
         return context.mode in {'OBJECT','EDIT_MESH'} and len(ug_props.text_points) > 0
 
     def execute(self, context):
-        if not ug.obname in bpy.data.objects:
-            self.report({'ERROR'}, "No object %r found, please Import PolyMesh" % ug.obname)
-            return {'FINISHED'}
         polymesh_to_ugdata(self)
         return {'FINISHED'}
 
@@ -184,6 +181,7 @@ def polymesh_to_ugdata(self):
     if len(ug_props.text_points) == 0:
         return None
 
+    ug.hide_other_objects()
     ob = ug.initialize_ug_object()
     verts = polymesh_get_verts(ug_props.text_points)
     [edges, faces] = polymesh_get_faces( \

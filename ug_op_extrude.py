@@ -79,6 +79,8 @@ def initialize_extrusion():
     if source_ob.name == ug.obname:
         return False, initial_faces
 
+    # Mode switch is needed to make sure mesh is saved to original object
+    bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.mode_set(mode='EDIT')
     ob = ug.initialize_ug_object()
 
@@ -125,11 +127,7 @@ def initialize_extrusion():
 
     # Hide everything else than UG object
     bpy.ops.object.mode_set(mode = 'OBJECT')
-    for obj in bpy.data.objects:
-        obj.select_set(False)
-        obj.hide_set(True)
-    ob.hide_set(False)
-    ob.select_set(True)
+    ug.hide_other_objects()
     bpy.ops.object.mode_set(mode = 'EDIT')
 
     return True, initial_faces
