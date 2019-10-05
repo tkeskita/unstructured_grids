@@ -39,7 +39,9 @@ class UG_OT_SelectCellsInclusive(bpy.types.Operator):
     def execute(self, context):
         n = select_cells_inclusive()
         if not n:
-            self.report({'ERROR'}, "No object %r" % ug.obname)
+            self.report({'ERROR'}, "No cells found. Maybe selection was " \
+                        + "empty, cells don't exist there, or object name " \
+                        + "is not %r?" % ug.obname)
         self.report({'INFO'}, "Selected vertices of %d cells" % n)
         return {'FINISHED'}
 
@@ -204,7 +206,9 @@ class UG_OT_ResetView(bpy.types.Operator):
 
 
 def reset_view():
-    '''Reset view in Edit Mode. Show boundary faces and hide deleted faces and verts'''
+    '''Reset view in Edit Mode. Show boundary faces and hide deleted and
+    internal faces and deleted verts.
+    '''
 
     # Note: Hidden elements show up correctly only in Edit Mode.
 
@@ -220,20 +224,23 @@ def reset_view():
     nf = 0 # number of hidden faces
     nv = 0 # number of hidden vertices
 
-    # TODO: Something still wrong with face hiding, does not seem to
-    # work for internal faces after extrusion?
-    for f in ug.ugfaces:
-        if f.deleted or f.neighbour != None:
-            bm.faces[f.bi].hide_set(True)
-            nf += 1
-        else:
-            bm.faces[f.bi].hide_set(False)
+    # Hiding order seems to matter. First vertices, then
+    # faces. Otherwise faces are not hidden correctly.
     for v in ug.ugverts:
         if v.deleted:
             bm.verts[v.bi].hide_set(True)
             nv += 1
         else:
             bm.verts[v.bi].hide_set(False)
+
+    for f in ug.ugfaces:
+        if f.bi == -1:
+            continue
+        if f.deleted or f.neighbour != None:
+            bm.faces[f.bi].hide_set(True)
+            nf += 1
+        else:
+            bm.faces[f.bi].hide_set(False)
 
     bmesh.update_edit_mesh(mesh=ob.data)
     bm.free()
@@ -357,12 +364,13 @@ def add_faces_i2b(flist):
     ob = ug.get_ug_object()
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
-    nPolys = ob.data.polygons[-1].index # Number of faces initially
 
     bm = bmesh.from_edit_mesh(ob.data)
     bm.faces.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.verts.ensure_lookup_table()
+
+    fi = len(bm.faces) # face index
 
     for f in flist:
         bvlist = []
@@ -371,6 +379,9 @@ def add_faces_i2b(flist):
         bf = bm.faces.new(bvlist)
         if not bf:
             l.error("Could not create face " + str(bvlist))
+        f.bi = fi
+        ug.facemap[fi] = f
+        fi += 1
 
     bm.verts.index_update()
     bm.edges.index_update()
@@ -381,11 +392,6 @@ def add_faces_i2b(flist):
     # Refresh modified mesh
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
-
-    # Set face indices
-    for f in flist:
-        nPolys += 1
-        f.bi = nPolys
 
     set_faces_boundary_to_default(flist)
     l.debug("Converted faces: %d" % len(flist))

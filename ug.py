@@ -305,7 +305,7 @@ def ug_print_cell_info(c):
     text = "Cell info:\n"
     text += "Cell %d " % c.ii
     if c.deleted:
-        text += "(deleted) "
+        text += "(DELETED) "
     text += "contains %d UGFaces " % len(c.ugfaces)
     text += "and %d UGVerts\n" % len(c.ugverts)
 
@@ -359,10 +359,12 @@ class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
 def ug_print_face_info(f):
     '''Print information about argument face'''
 
+    global facemap
+
     text = "Face info:\n"
     text += "Mesh face %d " % f.bi
     if f.deleted:
-        text += "(deleted) "
+        text += "(DELETED) "
     text += "contains %d UGVerts: " % len(f.ugverts)
 
     for v in f.ugverts:
@@ -379,8 +381,13 @@ def ug_print_face_info(f):
         text += "%d" % f.neighbour.ii
     else:
         text += "None"
-
     text += "\n"
+
+    if f.bi in facemap:
+        if facemap[f.bi] != f:
+            text += "  ERROR: wrong facemap[%d] point to %d\n" % (f.bi, facemap[f.bi].bi)
+    else:
+        text += "  WARNING: no facemap found for %d\n" % f.bi
 
     # TODO: Also print to Blender text block?
     l.debug(text)
