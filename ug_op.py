@@ -226,6 +226,12 @@ def reset_view():
 
     # Hiding order seems to matter. First vertices, then
     # faces. Otherwise faces are not hidden correctly.
+
+    # TODO: Reset view still does not work correctly when first
+    # extrude new cells (internal faces formed in mesh), then delete
+    # some cells. Deletion works if mesh is exported and imported
+    # after extrusion prior to cell deletions.
+
     for v in ug.ugverts:
         if v.deleted:
             bm.verts[v.bi].hide_set(True)
@@ -373,6 +379,8 @@ def add_faces_i2b(flist):
     fi = len(bm.faces) # face index
 
     for f in flist:
+        if f.bi > -1:
+            continue
         bvlist = []
         for v in f.ugverts:
             bvlist.append(bm.verts[v.bi])
