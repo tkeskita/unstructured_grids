@@ -261,7 +261,6 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     for i in range(len(face_verts)):
         # Add ugface and facemap entry
         f = ug.UGFace(face_verts[i])
-        ug.facemap[i] = f
 
         # Part 1. Process owner
         # Add owner cell index
@@ -303,6 +302,7 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
             # Boundary face, add index and create face geometry for mesh object
             f.bi = len(faces)
             faces.append(tuple(face_verts[i]))
+            ug.facemap[f.bi] = f # Add face to facemap
 
         if i % print_interval == 0:
             l.debug("... processed face count: %d" % i)
