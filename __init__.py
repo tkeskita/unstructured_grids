@@ -244,6 +244,8 @@ class VIEW3D_PT_UG_GUI:
         row.label(text="Debug:")
         row = layout.row()
         row.operator("unstructured_grids.print_info_of_selected_cells", text="Print Cell Info")
+        row = layout.row()
+        row.operator("unstructured_grids.print_info_of_selected_faces", text="Print Face Info")
 
         # Object Mode warning
         if context.mode == 'OBJECT':
@@ -277,6 +279,7 @@ classes = (
     ug.UG_OT_UpdateZonesFromVertexGroups,
     ug.UG_OT_UpdateUGAllFromBlender,
     ug.UG_OT_PrintSelectedCellsInfo,
+    ug.UG_OT_PrintSelectedFacesInfo,
     ug.UG_OT_PrintSelectedVertexIndices,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,

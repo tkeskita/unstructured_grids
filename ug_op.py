@@ -210,6 +210,7 @@ def reset_view():
 
     import bmesh
     ob = ug.get_ug_object()
+    bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
 
     bm = bmesh.from_edit_mesh(ob.data)
@@ -219,20 +220,20 @@ def reset_view():
     nf = 0 # number of hidden faces
     nv = 0 # number of hidden vertices
 
+    # TODO: Something still wrong with face hiding, does not seem to
+    # work for internal faces after extrusion?
     for f in ug.ugfaces:
-        if f.bi < 0:
-            continue
-        if f.deleted:
+        if f.deleted or f.neighbour != None:
             bm.faces[f.bi].hide_set(True)
+            nf += 1
         else:
             bm.faces[f.bi].hide_set(False)
-            nf += 1
     for v in ug.ugverts:
         if v.deleted:
             bm.verts[v.bi].hide_set(True)
-        else:
-            bm.verts[f.bi].hide_set(False)
             nv += 1
+        else:
+            bm.verts[v.bi].hide_set(False)
 
     bmesh.update_edit_mesh(mesh=ob.data)
     bm.free()

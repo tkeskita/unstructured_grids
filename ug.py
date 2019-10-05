@@ -332,6 +332,60 @@ def ug_print_cell_info(c):
     l.debug(text)
 
 
+class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
+    '''Print information about selected faces'''
+    bl_idname = "unstructured_grids.print_info_of_selected_faces"
+    bl_label = "Print Selected UG Face Info (via Python Logging)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'} and exists_ug_state()
+
+    def execute(self, context):
+        ob = get_ug_object()
+        mode = ob.mode # Save original mode
+        # Return to object mode to update selection
+        if mode == 'EDIT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode='EDIT')
+        flist = [f for f in ob.data.polygons if f.select]
+        for f in flist:
+            ug_print_face_info(facemap[f.index])
+        self.report({'INFO'}, "%d face infos printed " % len(flist) \
+                    + "to terminal (via Python Logging)")
+        return {'FINISHED'}
+
+
+def ug_print_face_info(f):
+    '''Print information about argument face'''
+
+    text = "Face info:\n"
+    text += "Mesh face %d " % f.bi
+    if f.deleted:
+        text += "(deleted) "
+    text += "contains %d UGVerts: " % len(f.ugverts)
+
+    for v in f.ugverts:
+        text += "%d " % v.bi
+
+    text += "owner: "
+    if f.owner != None:
+        text += "%d " % f.owner.ii
+    else:
+        text += "None "
+
+    text += "neighbour: "
+    if f.neighbour != None:
+        text += "%d" % f.neighbour.ii
+    else:
+        text += "None"
+
+    text += "\n"
+
+    # TODO: Also print to Blender text block?
+    l.debug(text)
+
+
 class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
 
     bl_idname = "unstructured_grids.print_selected_vertex_indices"
