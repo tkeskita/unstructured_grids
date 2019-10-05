@@ -259,8 +259,9 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
     # Create faces at boundary and only edges for internal faces
     for i in range(len(face_verts)):
-        # Add ugface
+        # Add ugface and facemap entry
         f = ug.UGFace(face_verts[i])
+        ug.facemap[i] = f
 
         # Part 1. Process owner
         # Add owner cell index

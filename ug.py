@@ -33,7 +33,19 @@ ugfaces = [] # global list of all UGFaces
 ugverts = [] # global list of all UGVerts
 ugboundaries = [] # global list of all UGBoundaries
 ugzones = [] # global list of all UGFaceZones and UGCellZones
+facemap = dict() # global dictionary to get from mesh face index to an UGFace
 fulldebug = False # Set to True if you wanna see walls of logging debug
+
+# Note about facemap: Every UGVertex has a corresponding mesh vertex,
+# and their indices match. This makes it trivial to map between UGVert
+# and mesh vertex by the index number. However, same is NOT true for
+# faces. Internal UGFaces usually don't have (but may in some cases
+# have) a corresponding mesh face with same index number, since only
+# boundary faces are created to the mesh. That makes mesh handling and
+# mesh import faster, but it created a need to map from mesh face
+# index to UGFace. Searching through all ugfaces for right index
+# number takes too long for large meshes. Facemap returns UGFace much
+# faster.
 
 
 class UGCell:
@@ -63,6 +75,8 @@ class UGCell:
                 self.ugverts.append(v)
                 if fulldebug:
                     l.debug("Appended vert %d from face %d" % (v.bi, f.bi))
+            if self not in v.ugcells:
+                v.ugcells.append(self)
 
 
 class UGFace:
@@ -73,14 +87,13 @@ class UGFace:
     neighbour = None # UGCell neighbouring this face
     bi = -1 # Blender face index corresponding to this UGFace
             # Note: mapping from mesh face to ugface does NOT work
-            # like ugfaces[face.index]. Instead, use function
-            # get_ugface_from_face_index()
+            # like ugfaces[face.index]. Instead, use facemap[face.index]
     ei = -1 # Face index (used at export only)
     mati = -1 # Blender material slot index number
     ugverts = [] # list of ordered ugverts used by this face
 
-    def __init__(self, verts):
-        '''Initialize UGFace with vertex index list'''
+    def __init__(self, verts=[]):
+        '''Initialize UGFace with optional UGVert index list'''
         global ugfaces
         self.ugverts = []
         for v in verts:
@@ -88,15 +101,24 @@ class UGFace:
         ugfaces.append(self)
 
 
-    def invert_face_dir(self):
+    def invert_face_dir(self, switch=True):
         '''Invert face direction. Swap face owner and neighbour cells
-        and reverse face ugverts to mirror PolyMesh face normal vector.
+        (only if switch argument is true), and reverse face ugverts
+        to mirror PolyMesh face normal vector.
         '''
-        c = self.owner
-        self.owner = self.neighbour
-        self.neighbour = c
+        if switch:
+            c = self.owner
+            self.owner = self.neighbour
+            self.neighbour = c
         self.ugverts.reverse() # Nicer than list(reversed(self.ugverts))
 
+
+    def is_boundary_face(self):
+        '''Return True if this UGFace is a boundary face, otherwise False'''
+        if self.bi > -1 and self.neighbour == None:
+            return True
+        else:
+            return False
 
 
 class UGVertex:
@@ -525,17 +547,6 @@ def update_ug_all_from_blender(self=None):
     io_polymesh.ugdata_to_polymesh(self)
 
     return True
-
-
-def get_ugface_from_face_index(fi):
-    '''Finds UGFace that corresponds to argument mesh face index'''
-
-    global ugfaces
-    flist = [f for f in ugfaces if f.bi == fi]
-    if len(flist) != 1:
-        l.error("Can't find ugface corresponding to mesh face index %d" % fi)
-        return None
-    return flist[0]
 
 
 ######################

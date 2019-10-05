@@ -419,5 +419,6 @@ def set_faces_boundary_to_default(flist):
 
     bpy.ops.object.mode_set(mode = 'OBJECT')
     for f in flist:
-        ob.data.polygons[f.bi].material_index = mati
+        if f.is_boundary_face():
+            ob.data.polygons[f.bi].material_index = mati
     bpy.ops.object.mode_set(mode = 'EDIT')
