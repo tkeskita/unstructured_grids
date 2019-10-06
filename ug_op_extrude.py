@@ -36,6 +36,10 @@ fulldebug = False # Set to True if you wanna see walls of logging debug
 # are added by creating faces connecting new vertices, to close each
 # new cell.
 
+# Ideas to optimize extrusion speed further:
+# - don't create internal faces into mesh
+# - don't create top faces into mesh until last layer
+
 class UG_OT_ExtrudeCells(bpy.types.Operator):
     '''Extrude new cells from current face selection'''
     bl_idname = "unstructured_grids.extrude_cells"
@@ -57,13 +61,25 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Layer extrusion
         ug_props = bpy.context.scene.ug_props
         n = 0 # new cell count
-        vdir = dict() # Extrusion direction dictionary, updated per layer
+        vdir = [] # Extrusion directions, can be updated per layer
+        coeffs = [] # Extrusion lengths, can be updated per layer
+        new_ugfaces = [] # List of new ugfaces created in extrusion
+        import bmesh
+        ob = ug.get_ug_object()
+        bm = bmesh.from_edit_mesh(ob.data)
         for i in range(ug_props.extrusion_layers):
             if i == 0:
-                nf, vdir = extrude_cells(initial_faces, vdir)
+                bm, nf, vdir, coeffs, new_ugfaces = \
+                    extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces)
             else:
-                nf, vdir = extrude_cells([], vdir)
+                bm, nf, vdir, coeffs, new_ugfaces = \
+                    extrude_cells(bm, [], vdir, coeffs, new_ugfaces)
             n += nf
+        bm.normal_update()
+        bmesh.update_edit_mesh(mesh=ob.data)
+        bm.free()
+        ug_op.set_faces_boundary_to_default(new_ugfaces)
+        ug.update_ug_all_from_blender()
 
         self.report({'INFO'}, "Extruded %d new cells" % n)
         return {'FINISHED'}
@@ -142,16 +158,15 @@ def initialize_extrusion():
 
 
 
-def extrude_cells(initial_faces, vdir):
+def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
-    is reversed at the end. vdir is the dictionary for extrusion
-    directions for multilayer extrusion.
+    is reversed at the end. vdir and coeffs are directions and length
+    coefficients for extrusion in multilayer extrusion, and new_ugfaces
+    is a list of newly created ugfaces.
     '''
 
     import bmesh
-    ob = ug.get_ug_object()
-    bm = bmesh.from_edit_mesh(ob.data)
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
@@ -163,7 +178,8 @@ def extrude_cells(initial_faces, vdir):
 
     ugci0 = len(ug.ugcells) # Number of UGCells before extruding
     ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
-    new_ugfaces = list(initial_faces) # List of created UGFaces
+    if len(initial_faces) > 0:
+        new_ugfaces = list(initial_faces) # List of created UGFaces
 
     def get_verts(faces):
         '''Return list of bmesh verts that are part of argument bmesh
@@ -233,7 +249,7 @@ def extrude_cells(initial_faces, vdir):
     new_ugfaces = create_UG_verts_faces_and_cells(verts, edges, faces, new_ugfaces)
 
 
-    def calculate_extrusion_dir_and_coeffs(verts):
+    def calculate_extrusion_dir_and_coeffs(verts, vdir, coeffs):
         '''Calculate normalized extrusion direction vector and length
         scale coefficients based on angles of surrounding faces.
         Return dictionaries of directions and coeffs for each argument
@@ -241,9 +257,15 @@ def extrude_cells(initial_faces, vdir):
         '''
 
         from mathutils import Vector
-        vdir = dict() # extrusion directions to be calculated
-        coeffs = dict() # extrusion length coefficients to be calculated
         ug_props = bpy.context.scene.ug_props
+
+        # Do nothing if initial direction and coeffs is to be used
+        if len(vdir) > 0 and len(coeffs) > 0:
+            if ug_props.extrusion_uses_fixed_initial_directions:
+                return vdir, coeffs
+
+        vdir = [] # new extrusion directions to be calculated
+        coeffs = [] # new extrusion length coefficients to be calculated
 
         for v in verts:
             # Extrusion direction is calculated as average of
@@ -262,15 +284,15 @@ def extrude_cells(initial_faces, vdir):
                         continue
                 vec += f.normal
                 n += 1
-            vdir[v.index] = vec / float(n)
+            vdir.append(vec / float(n))
 
             # Length coefficient, TODO
-            coeffs[v.index] = 1.0
+            coeffs.append(1.0)
 
         return vdir, coeffs
 
 
-    def cast_vertices(bm, faces, vdir, verts):
+    def cast_vertices(bm, faces, verts, vdir, coeffs):
         '''Create new vertices from vertices of faces in argument bmesh, by
         casting each vertex towards initial (vdir) or updated average
         face normal direction. Return updated bmesh, vertex mapping
@@ -288,29 +310,21 @@ def extrude_cells(initial_faces, vdir):
 
         # Calculate updated extrusion direction and length
         # coefficients for vertices based on current face normals
-        new_vdir, coeffs = calculate_extrusion_dir_and_coeffs(verts)
+        vdir, coeffs = calculate_extrusion_dir_and_coeffs(verts, vdir, coeffs)
 
         # Cast new vertices
-        for v in verts:
-            if ug_props.extrusion_uses_fixed_initial_directions and \
-               v.index in vdir:
-                vertdir = vdir[v.index]
-            else:
-                vertdir = new_vdir[v.index]
-
-            newco = v.co + extrude_len * vertdir * coeffs[v.index]
+        for i in range(len(verts)):
+            newco = verts[i].co + extrude_len * vdir[i] * coeffs[i]
             v2 = bm.verts.new(newco)
-            vert_map[v] = v2
-            # Map vdir for next round
-            save_vdir[bvi] = vertdir
+            vert_map[verts[i]] = v2
 
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 
         l.debug("Cast %d vertices" % len(save_vdir))
-        return bm, vert_map, save_vdir
+        return bm, vert_map, vdir, coeffs
 
-    bm, vert_map, vdir = cast_vertices(bm, faces, vdir, verts)
+    bm, vert_map, vdir, coeffs = cast_vertices(bm, faces, verts, vdir, coeffs)
 
 
     def create_mesh_faces(bm, edges, edge2cell_inex, vert_map, faces, \
@@ -379,7 +393,7 @@ def extrude_cells(initial_faces, vdir):
                     fi += 1
                     ugfi += 1
                 else:
-                    # Add existing UGFace to UGCell
+                    # Internal face. Add existing UGFace to UGCell
                     ugface = ug.ugfaces[ugfi0 + edge2cell_index[e]]
                     ug.ugcells[ugci].add_face_info(ugface)
                     ugface.neighbour = ug.ugcells[ugci]
@@ -456,7 +470,6 @@ def extrude_cells(initial_faces, vdir):
 
     thickness_update()
 
-
     # Reverse direction of initial faces (initial extrusion only)
     bm.faces.ensure_lookup_table()
     for f in initial_faces:
@@ -465,13 +478,4 @@ def extrude_cells(initial_faces, vdir):
         bm.faces[f.bi].normal_update()
         f.invert_face_dir()
 
-    # Finish up
-    bm.normal_update()
-    bmesh.update_edit_mesh(mesh=ob.data)
-    bm.free()
-    bpy.ops.object.mode_set(mode = 'OBJECT')
-    bpy.ops.object.mode_set(mode = 'EDIT')
-    ug_op.set_faces_boundary_to_default(new_ugfaces)
-    ug.update_ug_all_from_blender()
-
-    return len(faces), vdir
+    return bm, len(faces), vdir, coeffs, new_ugfaces
