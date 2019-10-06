@@ -91,7 +91,7 @@ Currently implemented features include:
 - Deletion of selected cells to carve voids into the domain.
 
 - Extrusion of new cells (one or several layers) from selected faces
-  (to be improved still, now quite slow).
+  (Warning: slow operation).
 
 
 ## Installation

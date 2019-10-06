@@ -65,15 +65,21 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         coeffs = [] # Extrusion lengths, can be updated per layer
         new_ugfaces = [] # List of new ugfaces created in extrusion
         import bmesh
+        import time
         ob = ug.get_ug_object()
         bm = bmesh.from_edit_mesh(ob.data)
         for i in range(ug_props.extrusion_layers):
+            t0 = time.clock()
             if i == 0:
                 bm, nf, vdir, coeffs, new_ugfaces = \
                     extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces)
             else:
                 bm, nf, vdir, coeffs, new_ugfaces = \
                     extrude_cells(bm, [], vdir, coeffs, new_ugfaces)
+                t1 = time.clock()
+                l.debug("Extruding layer %d, " % i \
+                + "cells added: %d " % n \
+                + "(%d cells/s)" % int(nf/(t1-t0)))
             n += nf
         bm.normal_update()
         bmesh.update_edit_mesh(mesh=ob.data)
@@ -174,7 +180,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
     # index number of mesh face in faces list. Actual UGCell index
     # number is cell number plus initial number of prior ugcells.
     faces = [f for f in bm.faces if f.select]
-    l.debug("Face count at beginning: %d" % len(faces))
+    if fulldebug: l.debug("Face count at beginning: %d" % len(faces))
 
     ugci0 = len(ug.ugcells) # Number of UGCells before extruding
     ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
@@ -321,7 +327,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 
-        l.debug("Cast %d vertices" % len(save_vdir))
+        if fulldebug: l.debug("Cast %d vertices" % len(save_vdir))
         return bm, vert_map, vdir, coeffs
 
     bm, vert_map, vdir, coeffs = cast_vertices(bm, faces, verts, vdir, coeffs)
@@ -462,7 +468,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         expr = ug_props.extrusion_scale_thickness_expression
         try:
             rval = eval(expr)
-            l.debug("Expression returned %s" % str(rval))
+            if fulldebug: l.debug("Expression returned %s" % str(rval))
             ug_props.extrusion_thickness = float(rval)
         except:
             l.error("Error in evaluating: %r" % expr)
