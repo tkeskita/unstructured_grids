@@ -493,8 +493,8 @@ def polymesh_get_zone(zonetype, text):
                         zone.ugfaces.append(ug.ugfaces[i])
                     l.debug("FaceZone: " + str(zonename) + ": %d faces" % len(iList))
                 elif label.startswith('flipMap'):
-                    # face flipMap is stored as a dummy list for now
-                    zone.flipMap = iList
+                    for i in iList:
+                        zone.flipMap.append(i)
                     l.debug("Face FlipMap: " + str(zonename) + ": %d faces" % len(iList))
                 else:
                     l.error("Unknown label " + str(label))
@@ -661,7 +661,7 @@ def ugdata_to_polymesh(self):
     update_text_owner_neighbour(owneri, neighbouri)
     update_text_boundary()
     update_text_cell_zones()
-    # update_text_face_zones() # TODO
+    update_text_face_zones()
     return None
 
 def update_text_points(ob):
@@ -886,6 +886,8 @@ def update_text_cell_zones():
             continue
         if z.deleted:
             continue
+        l.debug("Updating text for %s zone %r" % (z.zonetype, z.zonename))
+
         text = z.zonename + "\n"
         text += "{\n"
         text += "type " + z.zonetype + "Zone;\n"
@@ -910,6 +912,62 @@ def update_text_cell_zones():
 
     bpy.context.scene.ug_props.text_cellZones = text
     l.debug("updated cell zones: %d" % nzones)
+    return None
+
+
+def update_text_face_zones():
+    '''Update PolyMesh faceZones text string contents from UG data'''
+
+    ztext = '' # generated zone entries
+    nzones = 0 # number of face zones
+
+    # Zone texts
+    for z in ug.ugzones:
+        if z.zonetype != 'face':
+            continue
+        if z.deleted:
+            continue
+        l.debug("Updating text for %s zone %r" % (z.zonetype, z.zonename))
+
+        text = z.zonename + "\n"
+        text += "{\n"
+        text += "type " + z.zonetype + "Zone;\n"
+
+        # Labels
+        text += "faceLabels List<label>\n"
+        text += str(len(z.ugfaces)) + "\n"
+        text += "(\n"
+        for f in z.ugfaces:
+            text += str(f.ei) + "\n"
+        text += ");\n}\n"
+
+        # flipMap. Zero is used if no value is specified.
+        text += "flipMap List<bool>\n"
+        text += str(len(z.ugfaces)) + "\n"
+        text += "(\n"
+        numFlipMap = len(z.flipMap)
+        for i in range(len(z.ugfaces)):
+            if i >= numFlipMap:
+                text += str(0) + "\n"
+            else:
+                text += str(z.flipMap[i]) + "\n"
+        text += ");\n}\n\n"
+        ztext += text
+
+        nzones +=1
+
+    # Generate new text
+    if nzones == 0:
+        bpy.context.scene.ug_props.text_faceZones = ''
+        l.debug("text_faceZones is empty (no face zones defined)")
+        return None
+
+    text = of_file_header('regIOobject', 'faceZones') + "\n"
+    text += str(nzones) + "\n(\n"
+    text += ztext + ")\n"
+
+    bpy.context.scene.ug_props.text_faceZones = text
+    l.debug("updated face zones: %d" % nzones)
     return None
 
 

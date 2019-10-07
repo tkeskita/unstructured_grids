@@ -168,7 +168,7 @@ class UGZone:
     '''
 
     deleted = False # boolean for patches which contain zero faces
-    zonetype = 'face' # zone type name: cell or face
+    zonetype = 'cell' # zone type name: cell or face
     zonename = 'default' # zone name
     ugfaces = [] # list of UGFaces that are part of face zone
     ugcells = [] # list of UGCells that are part of cell zone
@@ -478,9 +478,7 @@ def update_ugboundaries():
 
 
 class UG_OT_UpdateZonesFromVertexGroups(bpy.types.Operator):
-    '''Sync UG zone objects from vertex groups.
-    Run after any changes to face or cell zone assignments.
-    '''
+    '''Update Zone Data from Vertex Groups After Zone Changes'''
     bl_idname = "unstructured_grids.update_ugzones"
     bl_label = "Update UG Zones From Vertex Groups"
 
@@ -503,10 +501,7 @@ def update_ugzones():
     # Initialize zones
     for z in ugzones:
         z.deleted = True
-        # TODO: Face normal direction issue: Face normals need
-        # to be visualized and made flippable in UI. Face zones
-        # can't be changed before that.
-        # z.ugfaces = []
+        z.ugfaces = []
         z.ugcells = []
 
     # Process all vertex groups:
@@ -524,6 +519,7 @@ def update_ugzones():
             continue
 
         zonename = vgname.replace(zonetype + 'Zone_', '')
+        l.debug("Updating %s zone %r" % (zonetype, zonename))
 
         # Get existing zone or create new
         if len(ugzones) <= i:
@@ -542,7 +538,10 @@ def update_ugzones():
             l.debug("Cell zone: " + z.zonename + " cell count: %d" % len(z.ugcells))
             n += 1
         elif zonetype == 'face':
-            l.error("Face zone update is not yet supported")
+            l.debug("Search cells among %d verts" % len(verts))
+            z.ugfaces = ug_op.get_ugfaces_from_vertices_exclusive(verts)
+            l.debug("Face zone: " + z.zonename + " face count: %d" % len(z.ugfaces))
+            n += 1
         i += 1
 
     return n

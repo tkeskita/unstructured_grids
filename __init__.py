@@ -38,6 +38,7 @@ if "bpy" in locals():
     importlib.reload(io_polymesh)
     importlib.reload(ug_op)
     importlib.reload(ug_op_extrude)
+    importlib.reload(ug_zones)
 else:
     import math
     import bpy
@@ -46,6 +47,7 @@ else:
         io_polymesh,
         ug_op,
         ug_op_extrude,
+        ug_zones,
         )
     from bpy.app.handlers import persistent
     from sys import float_info
@@ -146,6 +148,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default="x*1.0",
         maxlen=0,
     )
+    facezone_selection: bpy.props.IntProperty(
+        name="Face Zone Selection",
+        description="Face Zone Order Number to Edit Face Orientations",
+        default=1,
+        min=1, max=1000
+    )
 
 def menu_import(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
@@ -220,6 +228,20 @@ class VIEW3D_PT_UG_GUI:
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
 
         row = layout.row()
+        row.label(text="Zones:")
+        row = layout.row()
+        row.operator("unstructured_grids.update_ugzones", text="Update from Vertex Groups")
+        if ug_zones.exist_face_zones():
+            row = layout.row()
+            row.prop(ug_props, "facezone_selection", text="Edit Face Zone Orientation")
+            col = layout.column()
+            rowsub = col.row(align=True)
+            rowsub.operator("unstructured_grids.facezone_edit_face_orientations", \
+                            text="Start Editing")
+            rowsub.operator("unstructured_grids.facezone_finish_face_orientations", \
+                            text="Finish Editing")
+
+        row = layout.row()
         row.label(text="Extrusion Settings:")
         col = layout.column()
         rowsub = col.row(align=True)
@@ -289,6 +311,8 @@ classes = (
     ug_op.UG_OT_ResetView,
     ug_op.UG_OT_DeleteCells,
     ug_op_extrude.UG_OT_ExtrudeCells,
+    ug_zones.UG_OT_EditFaceZoneOrientations,
+    ug_zones.UG_OT_FinishFaceZoneOrientations,
 )
 
 def register():

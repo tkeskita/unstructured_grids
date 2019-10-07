@@ -175,6 +175,30 @@ def get_ugcells_from_vertices_exclusive(vilist):
     return clist
 
 
+def get_ugfaces_from_vertices_exclusive(vilist):
+    '''Return list of UGFaces that are completely defined by vertices in
+    vertex index list vilist
+    '''
+
+    flist = []
+    i = 0
+    viset = set(vilist) # Convert to set for fast search speed
+
+    for f in ug.ugfaces:
+        if f.deleted:
+            continue
+        test = True
+        for v in f.ugverts:
+            if v.bi not in viset:
+                test = False
+        if test:
+            flist.append(f)
+        if i % print_interval == 0:
+            l.debug("... processed face count: %d" % i)
+        i += 1
+    return flist
+
+
 def select_vertices_from_ugfaces(ob, flist):
     '''Select mesh object vertices that are part of faces in argument UGFace
     list. Return number of selected vertices.

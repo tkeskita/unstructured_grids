@@ -67,7 +67,7 @@ level.
 This add-on is in feature development stage.
 Currently implemented features include:
 
-- Import and Export of uncompressed PolyMesh files (boundary, faces,
+- Import and Export of uncompressed ASCII PolyMesh files (boundary, faces,
   neighbour, owner, points). PolyMesh Import and Export operators are located
   in File menu under Import and Export.
 
@@ -111,6 +111,8 @@ Currently implemented features include:
 
 ## Development Ideas for Future
 
+- Support for sets
+
 - Merge selected cells
 
 - Add support for face zone editing (face normal direction and flipMap)
@@ -129,7 +131,8 @@ Currently implemented features include:
   including smoothing of vertex normals, and extrusion length could be
   based on neighbour face-to-face angles or vertex normal angles to
   create hypergeometric extrusions, something like
-  [PyHyp](https://github.com/mdolab/pyhyp) does.
+  [PyHyp](https://github.com/mdolab/pyhyp) or
+  [Cassiopee](http://elsa.onera.fr/Cassiopee/) do.
 
 - Mesh Quality metrics + operator to select bad cells. Definition of
   bad cells depend on target simulation type, so there would need to
