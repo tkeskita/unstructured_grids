@@ -240,6 +240,9 @@ class VIEW3D_PT_UG_GUI:
                             text="Start Editing")
             rowsub.operator("unstructured_grids.facezone_finish_face_orientations", \
                             text="Finish Editing")
+            if ug_zones.face_zone_editing() == True:
+                row = layout.row()
+                row.operator("mesh.flip_normals", text="Flip Face Orientations")
 
         row = layout.row()
         row.label(text="Extrusion Settings:")

@@ -26,16 +26,29 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 fulldebug = False # Set to True if you wanna see walls of logging debug
+ed_ob_name = 'Face Zone Orientation' # Name for face zone editing object
 
 
 def exist_face_zones():
-    '''Return True if any face zones exist in UG data'''
+    '''Return True if any face zones exist in UG data. Used to hide or
+    show face zone editing buttons in UI.
+    '''
 
     for z in ug.ugzones:
         if z.deleted:
             continue
         if z.zonetype == 'face':
             return True
+    return False
+
+
+def face_zone_editing():
+    '''Return True if face zone editing mode is on. Used to hide or
+    show Flip Orientation button in UI.
+    '''
+
+    if bpy.context.active_object.name == ed_ob_name:
+        return True
     return False
 
 
@@ -129,7 +142,6 @@ def edit_face_zone(zone):
         f.normal_update()
 
     # Initialize Editing object
-    ed_ob_name = 'Face Zone Orientation'
     bpy.ops.object.select_all(action='DESELECT')
 
     if ed_ob_name in bpy.data.objects:
@@ -150,6 +162,7 @@ def edit_face_zone(zone):
     bpy.context.area.spaces[0].overlay.show_face_orientation = True
     bpy.ops.mesh.select_mode(type="FACE") # Face selection mode
     bm.free()
+
 
 class UG_OT_FinishFaceZoneOrientations(bpy.types.Operator):
     '''Finish Editing Face Orientations of a Face Zone'''
