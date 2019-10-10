@@ -54,7 +54,6 @@ class UG_OT_EditFaceZoneOrientations(bpy.types.Operator):
             return {'FINISHED'}
         edit_face_zone(zone)
         self.report({'INFO'}, "Orientation object created. " \
-                    + "Please turn on overlay 'Face Orientation'. " \
                     + "Click 'Finish Editing' to save changes.")
         return {'FINISHED'}
 
@@ -147,9 +146,9 @@ def edit_face_zone(zone):
     ob.hide_set(True)
     bm.to_mesh(mesh_data)
     bpy.ops.object.mode_set(mode='EDIT')
-    # TODO: Set overlay setting show_face_orientation on after it
-    # becomes available (via bpy.data.screens[0].overlay?). Until
-    # then, user needs to set it manually to see face orientations.
+    # Set "Face Orientation" overlay on
+    bpy.context.area.spaces[0].overlay.show_face_orientation = True
+    bpy.ops.mesh.select_mode(type="FACE") # Face selection mode
     bm.free()
 
 class UG_OT_FinishFaceZoneOrientations(bpy.types.Operator):
