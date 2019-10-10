@@ -939,7 +939,7 @@ def update_text_face_zones():
         text += "(\n"
         for f in z.ugfaces:
             text += str(f.ei) + "\n"
-        text += ");\n}\n"
+        text += ");\n"
 
         # flipMap. Zero is used if no value is specified.
         text += "flipMap List<bool>\n"

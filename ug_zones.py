@@ -89,17 +89,10 @@ def get_selected_face_zone(self):
     return None
 
 
-def edit_face_zone(zone):
-    '''Create object for face zone orientation editing'''
-
-    # Create mesh from faces in face zone
-    import bmesh
-    bm = bmesh.new()
-    ob = ug.get_ug_object()
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    # First generate index dictionary for new face vertices (vmap)
-    # and list of vertices (vlist)
+def get_vertex_maps(zone):
+    '''Return index dictionary for new face vertices (vmap)
+    and list of vertices (vlist)
+    '''
     vmap = dict()
     vlist = []
     vi = 0
@@ -112,6 +105,19 @@ def edit_face_zone(zone):
                 vmap[v] = vi
                 vlist.append(v)
                 vi += 1
+    return vmap, vlist
+
+
+def edit_face_zone(zone):
+    '''Create object for face zone orientation editing'''
+
+    # Create mesh from faces in face zone
+    import bmesh
+    bm = bmesh.new()
+    ob = ug.get_ug_object()
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    vmap, vlist = get_vertex_maps(zone)
 
     # Generate BMVerts
     for v in vlist:
@@ -171,12 +177,72 @@ class UG_OT_FinishFaceZoneOrientations(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode in {'OBJECT','EDIT_MESH'} and ug.exists_ug_state()
+        return context.mode in {'OBJECT','EDIT_MESH'} and \
+            ug.exists_ug_state() and face_zone_editing()
 
     def execute(self, context):
         zone = get_selected_face_zone(self)
         if zone == None:
             return {'FINISHED'}
+        if not ed_ob_name in bpy.data.objects:
+            self.report({'ERROR'}, "No object %r" % ed_ob_name)
+            return {'FINISHED'}
+        bpy.ops.object.mode_set(mode='OBJECT')
+        if len(zone.ugfaces) != len(bpy.data.objects[ed_ob_name].data.polygons):
+            self.report({'ERROR'}, "Mismatch in face count. " \
+                        + "Please restart, and don't modify geometry.")
+            return {'FINISHED'}
 
-        self.report({'INFO'}, "TODO")
+        n = finish_face_zone_editing(zone)
+        self.report({'INFO'}, "Flipped %d face zone faces" % n)
         return {'FINISHED'}
+
+
+def finish_face_zone_editing(zone):
+    '''Merge face orientation changes back to flipMap in original UGZone'''
+
+    ed_ob = bpy.data.objects[ed_ob_name]
+    vmap, vlist = get_vertex_maps(zone)
+
+    # Check for flipping for all zone UGFaces
+    nflip = 0
+    for fi, ugf in enumerate(zone.ugfaces):
+        is_flipped = face_normal_is_flipped(ugf, ed_ob.data.polygons[fi], vmap)
+        if is_flipped and zone.flipMap[fi] == 1:
+            continue
+        if not is_flipped and zone.flipMap[fi] == 0:
+            continue
+
+        if fulldebug: l.debug("Face %d is flipped, flipping flipMap" % fi)
+        if zone.flipMap[fi] == 1:
+            zone.flipMap[fi] = 0
+        elif zone.flipMap[fi] == 0:
+            zone.flipMap[fi] = 1
+        nflip += 1
+
+    # Delete face zone editing object and return to UG object
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.data.objects[ed_ob_name].select_set(True)
+    mesh = bpy.data.objects[ed_ob_name].data
+    bpy.ops.object.delete()
+    bpy.data.meshes.remove(mesh)
+    ob = ug.get_ug_object()
+    ug.hide_other_objects()
+    bpy.context.view_layer.objects.active = ob
+    bpy.ops.object.mode_set(mode='EDIT')
+    return nflip
+
+
+def face_normal_is_flipped(ugf, polygon, vmap):
+    '''Return True if polygon normal in mesh data is flipped compared to
+    UGFace. Flipping is determined by difference in face vertex indices.
+    '''
+
+    vi = 0
+    for ugv in ugf.ugverts:
+        iold = vmap[ugv.bi]
+        inew = polygon.vertices[vi]
+        if iold != inew:
+            return True
+        vi += 1
+    return False

@@ -82,8 +82,8 @@ Currently implemented features include:
 
 - Selection of cells via operators (UG Select Cells Inclusive/Exclusive)
 
-- Cell and face zones are visualized by vertex groups. Vertex groups
-  for cell zones can be edited.
+- Cell and face zones can be created, visualized and edited by
+  modifying Vertex Groups in Blender.
 
 - UG GUI Panel is shown as a Tab in Sidebar in 3D Viewport, for easy
   access to UG operators and information.
@@ -114,8 +114,6 @@ Currently implemented features include:
 - Support for sets
 
 - Merge selected cells
-
-- Add support for face zone editing (face normal direction and flipMap)
 
 - Subdivision of cells to produce smaller cells
 
