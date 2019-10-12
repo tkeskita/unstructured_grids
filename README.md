@@ -111,19 +111,29 @@ Currently implemented features include:
 
 ## Development Ideas for Future
 
-- Support for sets
+- Dissolve Edges (merge selected vertices connected by edges)
 
-- Merge selected cells
+- Import/Export of VTK Unstructured Grids (XML .vtu format?)
 
-- Subdivision of cells to produce smaller cells
+- Split Cells (Edge Division) (e.g. hexahedral cell is split to 8
+  cells, tetrahedral cell is split into 4 cells)
 
-- Import/export of VTK Unstructured Grids
+- Dissolve Internal Faces (merge cells)
 
-- Add Show Cells operator (creates temporary object with faces around
+- Merge Overlapping Boundary Faces (e.g. to merge two mesh regions)
+
+- Separate Internal Faces (convert internal face to two boundary faces)
+
+- Split Cells (Center Slicing) (polyhedron cell face vertices are
+  connected to cell center)
+
+- Show Cells (creates temporary object with faces around
   selected cells)
 
-- Add Fix Intersecting Boundaries operator (move boundary vertices so
+- Fix Intersecting Boundaries (move boundary vertices so
   that boundary faces don't intersect each other)
+
+- Support for OpenFOAM sets?
 
 - Improve extrusion of new cells. Method could be improved by
   including smoothing of vertex normals, and extrusion length could be
