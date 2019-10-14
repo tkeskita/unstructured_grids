@@ -47,7 +47,6 @@ fulldebug = False # Set to True if you wanna see walls of logging debug
 # number takes too long for large meshes. Facemap returns UGFace much
 # faster.
 
-
 class UGCell:
     '''Class for Unstructured Grid cell data objects'''
 
@@ -57,26 +56,51 @@ class UGCell:
     ei = -1 # Cell index (used at export only)
     ii = -1 # Internal index (used for debugging)
 
+    # Cell operations:
+
     def __init__(self):
-        '''Initialize UGCell with cell index'''
+        '''Initialize a new UGCell'''
         global ugcells
         self.ugfaces = []
         self.ugverts = []
         self.ii = len(ugcells)
         ugcells.append(self)
 
-    def add_face_info(self, f):
-        '''Add argument UGFace f and it's UGVerts to cell info lists'''
-        if f in self.ugfaces:
+    def add_face_and_verts(self, ugf):
+        '''Add argument UGFace ugf and it's UGVerts to this cell'''
+        if ugf in self.ugfaces:
             return None
-        self.ugfaces.append(f)
-        for v in f.ugverts:
-            if v not in self.ugverts:
-                self.ugverts.append(v)
-                if fulldebug:
-                    l.debug("Appended vert %d from face %d" % (v.bi, f.bi))
-            if self not in v.ugcells:
-                v.ugcells.append(self)
+        self.ugfaces.append(ugf)
+        for ugv in ugf.ugverts:
+            self.add_vert(ugv)
+
+    def remove_face_and_verts(self, ugf):
+        '''Remove argument UGFace ugf and it's UGVerts from this cell'''
+        if ugf in self.ugfaces:
+            self.ugfaces.pop(ugf)
+        for ugv in ugf.ugverts:
+            self.remove_vert(ugv)
+
+    def add_vert(self, ugv):
+        '''Add argument UGVertex ugv to this cell'''
+        if ugv in self.ugverts:
+            return None
+        self.ugverts.append(ugv)
+
+    def remove_vert(self, ugv):
+        '''Remove argument UGVertex ugv from this cell'''
+        if ugv in self.ugverts:
+            self.ugverts.pop(ugv)
+
+    def delete(self):
+        '''Delete this cell'''
+        for ugf in self.ugfaces:
+            ugf.remove_cell(self)
+        for ugv in self.ugverts:
+            ugv.remove_cell(self)
+        self.ugfaces = []
+        self.ugverts = []
+        self.deleted = True
 
 
 class UGFace:
@@ -93,17 +117,60 @@ class UGFace:
     ugverts = [] # list of ordered ugverts used by this face
 
     def __init__(self, verts=[]):
-        '''Initialize UGFace with optional UGVert index list'''
+        '''Initialize UGFace with optional vertex index list'''
         global ugfaces
         self.ugverts = []
         for v in verts:
             self.ugverts.append(ugverts[v])
         ugfaces.append(self)
 
+    def add_verts(self, ugverts):
+        '''Add argument UGVerts to this UGFace'''
+        for ugv in ugverts:
+            if ugv not in self.ugverts:
+                self.ugverts.append(ugv)
+
+    def remove_verts(self, ugverts):
+        '''Add argument UGVerts to this UGFace'''
+        for ugv in ugverts:
+            if ugv in self.ugverts:
+                self.ugverts.pop(ugv)
+
+    # Note: no add_owner/neighbour, just access those directly.
+
+    def remove_cell(self, c):
+        '''Remove argument UGCell c from this UGFace'''
+        if self.neighbour == c:
+            self.neighbour = None
+        elif self.owner == c:
+            self.owner = None
+        else:
+            l.error("Cell %d is neither owner nor neighbour " % c.ii \
+                    + "for face %d" % self.bi)
+
+    def add_mesh_face(self, fi):
+        '''Add mesh face index fi to this UGFace. Also update facemap'''
+        global facemap
+        self.bi = fi
+        facemap[fi] = self
+
+    # Note: No remove_mesh_face, that is not supported (no mesh
+    # elements are really deleted)
+
+    def delete(self):
+        '''Delete this UGFace'''
+        # Remove face from owner and neighbour cells
+        self.owner.remove_face_and_verts(self)
+        self.neighbour.remove_face_and_verts(self)
+        # Remove face from UGVerts
+        for ugv in self.ugverts:
+            ugv.remove_face(self)
+        self.ugverts = []
+        self.deleted = True
 
     def invert_face_dir(self, switch=True):
         '''Invert face direction. Swap face owner and neighbour cells
-        (only if switch argument is true), and reverse face ugverts
+        (done only if switch argument is true), and reverse face ugverts
         to mirror PolyMesh face normal vector.
         '''
         if switch:
@@ -111,7 +178,6 @@ class UGFace:
             self.owner = self.neighbour
             self.neighbour = c
         self.ugverts.reverse() # Nicer than list(reversed(self.ugverts))
-
 
     def is_boundary_face(self):
         '''Return True if this UGFace is a boundary face, otherwise False'''
@@ -130,14 +196,39 @@ class UGVertex:
             # always work in both ways, like:
             # ug.ugverts[vert.index] or: bm.verts[ugvert.bi]
     ei = -1 # Vertex index (used at export only)
+    ugfaces = [] # List of ugfaces that this vertex is part of
     ugcells = [] # List of ugcells that this vertex is part of
 
-    def __init__(self, i):
-        '''Initialize UGVertex with vertex index'''
+    def __init__(self):
+        '''Initialize a new UGVertex'''
         global ugverts
-        self.bi = i
+        self.bi = len(ugverts)
+        self.ugfaces = []
         self.ugcells = []
         ugverts.append(self)
+
+    def add_face(self, ugf):
+        '''Add argument UGFace ugf to this UGVertex'''
+        if ugf in self.ugfaces:
+            return None
+        self.ugfaces.append(ugf)
+
+    def remove_face(self, ugf):
+        '''Remove argument UGFace ugf from this UGVertex'''
+        if ugf in self.ugfaces:
+            self.ugfaces.pop(ugf)
+
+    def add_cell(self, c):
+        '''Add argument UGCell c to this UGVertex'''
+        if c in self.ugcells:
+            return None
+        self.ugcells.append(c)
+
+    def remove_cell(self, c):
+        '''Remove argument UGCell c from this UGVertex'''
+        if c in self.ugcells:
+            self.ugcells.pop(c)
+
 
 
 class UGBoundary:
@@ -275,7 +366,7 @@ def ug_print_stats():
     global ugcells
 
     if not exists_ug_state():
-        return "No Data, Please Import PolyMesh"
+        return "No Cells. Import or Extrude to begin."
     clist = [c for c in ugcells if c.deleted == False]
     text = "Cells: " + str(len(clist))
     return text
@@ -356,38 +447,38 @@ class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def ug_print_face_info(f):
-    '''Print information about argument face'''
+def ug_print_face_info(ugf):
+    '''Print information about argument UGFace'''
 
     global facemap
 
     text = "Face info:\n"
-    text += "Mesh face %d " % f.bi
-    if f.deleted:
+    text += "Mesh face %d " % ugf.bi
+    if ugf.deleted:
         text += "(DELETED) "
-    text += "contains %d UGVerts: " % len(f.ugverts)
+    text += "contains %d UGVerts: " % len(ugf.ugverts)
 
-    for v in f.ugverts:
+    for v in ugf.ugverts:
         text += "%d " % v.bi
 
     text += "owner: "
-    if f.owner != None:
-        text += "%d " % f.owner.ii
+    if ugf.owner != None:
+        text += "%d " % ugf.owner.ii
     else:
         text += "None "
 
     text += "neighbour: "
-    if f.neighbour != None:
-        text += "%d" % f.neighbour.ii
+    if ugf.neighbour != None:
+        text += "%d" % ugf.neighbour.ii
     else:
         text += "None"
     text += "\n"
 
-    if f.bi in facemap:
-        if facemap[f.bi] != f:
-            text += "  ERROR: wrong facemap[%d] point to %d\n" % (f.bi, facemap[f.bi].bi)
+    if ugf.bi in facemap:
+        if facemap[ugf.bi] != f:
+            text += "  ERROR: wrong facemap[%d] point to %d\n" % (ugf.bi, facemap[ugf.bi].bi)
     else:
-        text += "  WARNING: no facemap found for %d\n" % f.bi
+        text += "  WARNING: no facemap found for %d\n" % ugf.bi
 
     # TODO: Also print to Blender text block?
     l.debug(text)
@@ -451,13 +542,13 @@ def update_ugboundaries():
 
     # Process all boundary faces
     for i in range(len(ugfaces)):
-        f = ugfaces[i]
-        if f.deleted:
+        ugf = ugfaces[i]
+        if ugf.deleted:
             continue
-        if f.neighbour:
+        if ugf.neighbour:
             continue
 
-        mati = ob.data.polygons[f.bi].material_index
+        mati = ob.data.polygons[ugf.bi].material_index
         mat = ob.material_slots[mati]
 
         while (mati >= len(ugboundaries)):
@@ -467,7 +558,7 @@ def update_ugboundaries():
         patch.patchname = mat.name
 
         patch.deleted = False
-        patch.ugfaces.append(f)
+        patch.ugfaces.append(ugf)
 
     # Update number of faces in boundaries. Note: startFace is updated at export.
     for b in ugboundaries:

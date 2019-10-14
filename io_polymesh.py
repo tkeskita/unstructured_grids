@@ -219,7 +219,7 @@ def polymesh_get_verts(text):
             y = float(regex.group(2))
             z = float(regex.group(3))
             verts.append(tuple([x, y, z]))
-            ug.UGVertex(i)
+            ug.UGVertex()
             if i % print_interval == 0:
                 l.debug("... processed vertex count: %d" % i)
             i += 1
@@ -260,38 +260,35 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
     # Create faces at boundary and only edges for internal faces
     for i in range(len(face_verts)):
         # Add ugface and facemap entry
-        f = ug.UGFace(face_verts[i])
+        ugf = ug.UGFace(face_verts[i])
 
         # Part 1. Process owner
-        # Add owner cell index
-        f.owner = ug.ugcells[owner[i]]
+        c = ug.ugcells[owner[i]]
+        # Set owner cell
+        ugf.owner = c
         # Add face to owner's ugfaces list
-        f.owner.ugfaces.append(f)
+        c.add_face_and_verts(ugf)
 
+        # Set UGVertex info in place for vertices
         for v in face_verts[i]:
+            ugv = ug.ugverts[v]
             # Add owner cell info for vertices
-            clist = ug.ugverts[v].ugcells
-            if not f.owner in clist:
-                clist.append(f.owner)
-            # Add vertex to cell's ugverts
-            if ug.ugverts[v] not in f.owner.ugverts:
-                f.owner.ugverts.append(ug.ugverts[v])
+            ugv.add_cell(c)
+            # Add face to ugverts' face list
+            ugv.add_face(ugf)
 
         # Part 2. Process neighbour
         if i < len(neighbour):
+            c = ug.ugcells[neighbour[i]]
             # Add neighbour cell index
-            f.neighbour = ug.ugcells[neighbour[i]]
+            ugf.neighbour = c
             # Add face to neighbour's ugfaces list
-            f.neighbour.ugfaces.append(f)
+            c.add_face_and_verts(ugf)
 
             for v in face_verts[i]:
+                ugv = ug.ugverts[v]
                 # Add neighbour cell info for vertices
-                clist = ug.ugverts[v].ugcells
-                if not f.neighbour in clist:
-                    clist.append(f.neighbour)
-                # Add vertex to cell's ugverts
-                if ug.ugverts[v] not in f.neighbour.ugverts:
-                    f.neighbour.ugverts.append(ug.ugverts[v])
+                ugv.add_cell(c)
 
             # Add edges for geometry generation if needed
             if gen_edges:
@@ -300,9 +297,8 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
         else:
             # Boundary face, add index and create face geometry for mesh object
-            f.bi = len(faces)
+            ugf.add_mesh_face(len(faces))
             faces.append(tuple(face_verts[i]))
-            ug.facemap[f.bi] = f # Add face to facemap
 
         if i % print_interval == 0:
             l.debug("... processed face count: %d" % i)
@@ -724,8 +720,8 @@ def update_ei_and_text_faces(ob):
 
         for c in ug.ugcells:
             c.ei = -1
-        for f in ug.ugfaces:
-            f.ei = -1
+        for ugf in ug.ugfaces:
+            ugf.ei = -1
 
     def internal_face_pass(clist):
         '''Generate face definition text for internal faces from
@@ -745,26 +741,26 @@ def update_ei_and_text_faces(ob):
             if c.deleted:
                 continue
             c.ei = cei # Set cell index
-            for f in c.ugfaces:
-                if f.deleted:
+            for ugf in c.ugfaces:
+                if ugf.deleted:
                     continue
-                if not f.neighbour:
+                if not ugf.neighbour:
                     continue
-                if f.owner == c and f.neighbour.ei != -1:
+                if ugf.owner == c and ugf.neighbour.ei != -1:
                     # This leads to "Faces not in upper triangular order" errors
-                    l.warning("Face normal should be mirrored for face ei %d" % f.ei)
-                if f.ei != -1:
+                    l.warning("Face normal should be mirrored for face ei %d" % ugf.ei)
+                if ugf.ei != -1:
                     continue
-                export_ugfaces.append(f)
-                f.ei = fei # Set face index
-                text += gen_line(f.ugverts) # Add definition line and proceed
+                export_ugfaces.append(ugf)
+                ugf.ei = fei # Set face index
+                text += gen_line(ugf.ugverts) # Add definition line and proceed
                 fei += 1
             cei += 1
 
         # Update owner and neighbour index lists
-        for f in export_ugfaces:
-            owneri.append(f.owner.ei)
-            neighbouri.append(f.neighbour.ei)
+        for ugf in export_ugfaces:
+            owneri.append(ugf.owner.ei)
+            neighbouri.append(ugf.neighbour.ei)
 
         return text, fei, owneri, neighbouri
 
@@ -781,14 +777,14 @@ def update_ei_and_text_faces(ob):
                 continue
             # Update boundary index numbers
             patch.startFace = fei
-            for f in patch.ugfaces:
+            for ugf in patch.ugfaces:
                 # Sanity check
-                if f.ei != -1:
-                    l.error("Face export index already exists for face %d" % f.bi)
+                if ugf.ei != -1:
+                    l.error("Face export index already exists for face %d" % ugf.bi)
                     return None
-                f.ei = fei # Set face index
-                owneri.append(f.owner.ei) # Append owner index
-                text += gen_line(f.ugverts)
+                ugf.ei = fei # Set face index
+                owneri.append(ugf.owner.ei) # Append owner index
+                text += gen_line(ugf.ugverts)
                 fei += 1
         return text, fei, owneri
 
@@ -937,8 +933,8 @@ def update_text_face_zones():
         text += "faceLabels List<label>\n"
         text += str(len(z.ugfaces)) + "\n"
         text += "(\n"
-        for f in z.ugfaces:
-            text += str(f.ei) + "\n"
+        for ugf in z.ugfaces:
+            text += str(ugf.ei) + "\n"
         text += ");\n"
 
         # flipMap. Zero is used if no value is specified.
