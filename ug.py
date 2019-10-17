@@ -77,9 +77,9 @@ class UGCell:
     def remove_face_and_verts(self, ugf):
         '''Remove argument UGFace ugf and it's UGVerts from this cell'''
         if ugf in self.ugfaces:
-            self.ugfaces.pop(ugf)
-        for ugv in ugf.ugverts:
-            self.remove_vert(ugv)
+            self.ugfaces.remove(ugf)
+            for ugv in ugf.ugverts:
+                self.remove_vert(ugv)
 
     def add_vert(self, ugv):
         '''Add argument UGVertex ugv to this cell'''
@@ -88,9 +88,15 @@ class UGCell:
         self.ugverts.append(ugv)
 
     def remove_vert(self, ugv):
-        '''Remove argument UGVertex ugv from this cell'''
+        '''Remove argument UGVertex ugv from this cell. Remove only if no
+        faces are using UGVertex
+        '''
         if ugv in self.ugverts:
-            self.ugverts.pop(ugv)
+            ugflist = [ugf for ugf in self.ugfaces if ugv in ugf.ugverts]
+            if len(ugflist) == 0:
+                self.ugverts.remove(ugv)
+        if len(self.ugverts) == 0:
+            self.deleted = True
 
     def delete(self):
         '''Delete this cell'''
@@ -134,7 +140,7 @@ class UGFace:
         '''Add argument UGVerts to this UGFace'''
         for ugv in ugverts:
             if ugv in self.ugverts:
-                self.ugverts.pop(ugv)
+                self.ugverts.remove(ugv)
 
     # Note: no add_owner/neighbour, just access those directly.
 
@@ -144,9 +150,7 @@ class UGFace:
             self.neighbour = None
         elif self.owner == c:
             self.owner = None
-        else:
-            l.error("Cell %d is neither owner nor neighbour " % c.ii \
-                    + "for face %d" % self.bi)
+            self.deleted = True
 
     def add_mesh_face(self, fi):
         '''Add mesh face index fi to this UGFace. Also update facemap'''
@@ -160,12 +164,16 @@ class UGFace:
     def delete(self):
         '''Delete this UGFace'''
         # Remove face from owner and neighbour cells
-        self.owner.remove_face_and_verts(self)
-        self.neighbour.remove_face_and_verts(self)
+        if self.owner:
+            self.owner.remove_face_and_verts(self)
+        if self.neighbour:
+            self.neighbour.remove_face_and_verts(self)
         # Remove face from UGVerts
         for ugv in self.ugverts:
             ugv.remove_face(self)
         self.ugverts = []
+        self.owner = None
+        self.neighbour = None
         self.deleted = True
 
     def invert_face_dir(self, switch=True):
@@ -212,22 +220,28 @@ class UGVertex:
         if ugf in self.ugfaces:
             return None
         self.ugfaces.append(ugf)
+        self.deleted = False
 
     def remove_face(self, ugf):
         '''Remove argument UGFace ugf from this UGVertex'''
         if ugf in self.ugfaces:
-            self.ugfaces.pop(ugf)
+            self.ugfaces.remove(ugf)
+        if len(self.ugfaces) == 0:
+            self.deleted = True
 
     def add_cell(self, c):
         '''Add argument UGCell c to this UGVertex'''
         if c in self.ugcells:
             return None
         self.ugcells.append(c)
+        self.deleted = False
 
     def remove_cell(self, c):
         '''Remove argument UGCell c from this UGVertex'''
         if c in self.ugcells:
-            self.ugcells.pop(c)
+            self.ugcells.remove(c)
+        if len(self.ugcells) == 0:
+            self.deleted = True
 
 
 

@@ -111,6 +111,10 @@ Currently implemented features include:
 
 ## Development Ideas for Future
 
+- Add integrity checks for selected UG data. E.g. calculate volume of
+  cells (should not be zero), maybe check for intersections, calculate
+  sum of face area weighed normals for cells (should be zero) etc.
+
 - Dissolve Edges (merge selected vertices connected by edges)
 
 - Import/Export of VTK Unstructured Grids (XML .vtu format?)

@@ -81,8 +81,8 @@ def get_ugcells_from_vertices_inclusive(vilist):
     for c in ug.ugcells:
         if c.deleted:
             continue
-        for v in c.ugverts:
-            if v.bi in viset:
+        for ugv in c.ugverts:
+            if ugv.bi in viset:
                 if not clist or clist[-1] != c:
                     clist.append(c)
             if i % print_interval == 0:
@@ -98,10 +98,10 @@ def select_vertices_from_ugcells(ob, clist):
 
     n = 0
     for c in clist:
-        for f in c.ugfaces:
-            for v in f.ugverts:
-                if ob.data.vertices[v.bi].select == False:
-                    ob.data.vertices[v.bi].select = True
+        for ugf in c.ugfaces:
+            for ugv in ugf.ugverts:
+                if ob.data.vertices[ugv.bi].select == False:
+                    ob.data.vertices[ugv.bi].select = True
                     n += 1
     return n
 
@@ -164,8 +164,8 @@ def get_ugcells_from_vertices_exclusive(vilist):
         if c.deleted:
             continue
         test = True
-        for v in c.ugverts:
-            if v.bi not in viset:
+        for ugv in c.ugverts:
+            if ugv.bi not in viset:
                 test = False
         if test:
             clist.append(c)
@@ -180,35 +180,35 @@ def get_ugfaces_from_vertices_exclusive(vilist):
     vertex index list vilist
     '''
 
-    flist = []
+    ugflist = []
     i = 0
     viset = set(vilist) # Convert to set for fast search speed
 
-    for f in ug.ugfaces:
-        if f.deleted:
+    for ugf in ug.ugfaces:
+        if ugf.deleted:
             continue
         test = True
-        for v in f.ugverts:
-            if v.bi not in viset:
+        for ugv in ugf.ugverts:
+            if ugv.bi not in viset:
                 test = False
         if test:
-            flist.append(f)
+            ugflist.append(ugf)
         if i % print_interval == 0:
             l.debug("... processed face count: %d" % i)
         i += 1
-    return flist
+    return ugflist
 
 
-def select_vertices_from_ugfaces(ob, flist):
+def select_vertices_from_ugfaces(ob, ugflist):
     '''Select mesh object vertices that are part of faces in argument UGFace
     list. Return number of selected vertices.
     '''
 
     n = 0
-    for f in flist:
-        for v in f.ugverts:
-            if ob.data.vertices[v.bi].select == False:
-                ob.data.vertices[v.bi].select = True
+    for ugf in ugflist:
+        for ugv in ugf.ugverts:
+            if ob.data.vertices[ugv.bi].select == False:
+                ob.data.vertices[ugv.bi].select = True
                 n += 1
     return n
 
@@ -256,21 +256,21 @@ def reset_view():
     # some cells. Deletion works if mesh is exported and imported
     # after extrusion prior to cell deletions.
 
-    for v in ug.ugverts:
-        if v.deleted:
-            bm.verts[v.bi].hide_set(True)
+    for ugv in ug.ugverts:
+        if ugv.deleted:
+            bm.verts[ugv.bi].hide_set(True)
             nv += 1
         else:
-            bm.verts[v.bi].hide_set(False)
+            bm.verts[ugv.bi].hide_set(False)
 
-    for f in ug.ugfaces:
-        if f.bi == -1:
+    for ugf in ug.ugfaces:
+        if ugf.bi == -1:
             continue
-        if f.deleted or f.neighbour != None:
-            bm.faces[f.bi].hide_set(True)
+        if ugf.deleted or ugf.neighbour != None:
+            bm.faces[ugf.bi].hide_set(True)
             nf += 1
         else:
-            bm.faces[f.bi].hide_set(False)
+            bm.faces[ugf.bi].hide_set(False)
 
     bmesh.update_edit_mesh(mesh=ob.data)
     bm.free()
@@ -317,9 +317,6 @@ def delete_cells_from_vertex_selection():
     l.debug("New boundary faces: %d" % len(bfacelist))
     l.debug("Old boundary faces for deletion: %d" % len(delfacelist))
 
-    # Mark unused vertices as deleted
-    delete_vertices_of_deleted_cell(clist)
-
     # Add faces to geometry for new boundary faces
     add_faces_i2b(bfacelist)
 
@@ -335,57 +332,45 @@ def delete_cell(c, bfacelist, delfacelist):
     into boundary faces (delfacelist). Return both lists updated.
     '''
 
-    for f in c.ugfaces:
-        if f.owner == c and f.neighbour != None:
+    ugflist = [] # UGFaces to be deleted
+
+    # Handle cell faces
+    for ugf in c.ugfaces:
+        if fulldebug: l.debug("Checking face %d" % ugf.bi)
+        if ugf.owner == c and ugf.neighbour != None:
             if fulldebug: l.debug("internal face, c is owner")
-            f.invert_face_dir()
-            f.neighbour = None
-            bfacelist.append(f)
+            ugf.invert_face_dir()
+            ugf.neighbour = None
+            bfacelist.append(ugf)
 
-        elif f.neighbour == c:
+        elif ugf.neighbour == c:
             if fulldebug: l.debug("internal face, c is neighbour")
-            f.neighbour = None
-            bfacelist.append(f)
+            ugf.neighbour = None
+            bfacelist.append(ugf)
 
-        elif f.neighbour == None:
+        elif ugf.neighbour == None:
             if fulldebug: l.debug("boundary face")
-            f.deleted = True
-            f.owner = None
-            # Remove face from new boundary face list if needed
-            if f in bfacelist:
-                bfacelist.pop(bfacelist.index(f))
-            delfacelist.append(f)
+            # Mark face. Can't use ugf.delete() right away, maybe
+            # because it affects c.ugfaces loop? Delete faces after loop.
+            ugf.deleted = True
+            ugf.owner = None
 
-    # Mark cell as deleted
-    c.deleted = True
+            # Remove face from new boundary face list if needed
+            if ugf in bfacelist:
+                bfacelist.remove(ugf)
+            delfacelist.append(ugf)
+
+    # Delete faces
+    for ugf in ugflist:
+        ugf.delete()
+
+    # Delete cell
+    c.delete()
 
     return bfacelist, delfacelist
 
 
-def delete_vertices_of_deleted_cell(clist):
-    '''Delete unused UGVertices after deletion of argument UGCell list.
-    Return list of deleted ugverts
-    '''
-
-    n = 0
-    vlist = []
-    for c in clist:
-        for v in c.ugverts:
-            cellFound = False
-            for vc in v.ugcells:
-                if vc.deleted:
-                    continue
-                cellFound = True
-                break
-            if not cellFound and v not in vlist:
-                v.deleted = True
-                vlist.append(v)
-                n += 1
-    l.debug("Deleted verts: %d" % n)
-    return vlist
-
-
-def add_faces_i2b(flist):
+def add_faces_i2b(ugflist):
     '''Add faces to geometry for internal UGFaces turned into boundary faces'''
 
     import bmesh
@@ -402,17 +387,17 @@ def add_faces_i2b(flist):
 
     fi = len(bm.faces) # face index
 
-    for f in flist:
-        if f.bi > -1:
+    for ugf in ugflist:
+        if ugf.bi > -1:
             continue
         bvlist = []
-        for v in f.ugverts:
-            bvlist.append(bm.verts[v.bi])
+        for ugv in ugf.ugverts:
+            bvlist.append(bm.verts[ugv.bi])
         bf = bm.faces.new(bvlist)
         if not bf:
             l.error("Could not create face " + str(bvlist))
-        f.bi = fi
-        ug.facemap[fi] = f
+        ugf.bi = fi
+        ug.facemap[fi] = ugf
         fi += 1
 
     bm.verts.index_update()
@@ -425,11 +410,11 @@ def add_faces_i2b(flist):
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
 
-    set_faces_boundary_to_default(flist)
-    l.debug("Converted faces: %d" % len(flist))
+    set_faces_boundary_to_default(ugflist)
+    l.debug("Converted faces: %d" % len(ugflist))
 
 
-def set_faces_boundary_to_default(flist):
+def set_faces_boundary_to_default(ugflist):
     '''Set material (boundary patch) of argument UGFaces to default'''
 
     matname = 'default'
@@ -457,7 +442,7 @@ def set_faces_boundary_to_default(flist):
             break
 
     bpy.ops.object.mode_set(mode = 'OBJECT')
-    for f in flist:
-        if f.is_boundary_face():
-            ob.data.polygons[f.bi].material_index = mati
+    for ugf in ugflist:
+        if ugf.is_boundary_face():
+            ob.data.polygons[ugf.bi].material_index = mati
     bpy.ops.object.mode_set(mode = 'EDIT')

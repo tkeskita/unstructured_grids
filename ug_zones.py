@@ -96,9 +96,9 @@ def get_vertex_maps(zone):
     vmap = dict()
     vlist = []
     vi = 0
-    for uf in zone.ugfaces:
+    for ugf in zone.ugfaces:
         verts = [] # vertex index list
-        for ugv in uf.ugverts:
+        for ugv in ugf.ugverts:
             verts.append(ugv.bi)
         for v in verts:
             if v not in vlist:
@@ -127,16 +127,16 @@ def edit_face_zone(zone):
 
     # Generate BMFaces
     for i in range(len(zone.ugfaces)):
-        uf = zone.ugfaces[i]
+        ugf = zone.ugfaces[i]
         verts = [] # vertex index list
-        for ugv in uf.ugverts:
+        for ugv in ugf.ugverts:
             verts.append(ugv.bi)
         bmverts = [] # bmesh (new) vertex list
         for v in verts:
             bmverts.append(bm.verts[vmap[v]])
 
         if fulldebug:
-            text = "UGFace %s verts: " % str(uf)
+            text = "UGFace %s verts: " % str(ugf)
             for v in verts:
                 text += "%s " % str(v)
             l.debug(text)
@@ -230,6 +230,8 @@ def finish_face_zone_editing(zone):
     ug.hide_other_objects()
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.mode_set(mode='EDIT')
+    # Set "Face Orientation" overlay off
+    bpy.context.area.spaces[0].overlay.show_face_orientation = False
     return nflip
 
 
