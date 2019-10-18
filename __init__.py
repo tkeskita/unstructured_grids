@@ -36,6 +36,7 @@ if "bpy" in locals():
     import importlib
     importlib.reload(ug)
     importlib.reload(io_polymesh)
+    importlib.reload(io_vtu)
     importlib.reload(ug_op)
     importlib.reload(ug_op_extrude)
     importlib.reload(ug_zones)
@@ -46,6 +47,7 @@ else:
     from . import(
         ug,
         io_polymesh,
+        io_vtu,
         ug_op,
         ug_op_extrude,
         ug_zones,
@@ -157,14 +159,19 @@ class UGProperties(bpy.types.PropertyGroup):
         min=1, max=1000
     )
 
-def menu_import(self, context):
+def menu_import_polymesh(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
                          text="OpenFOAM PolyMesh (UG)"
     )
 
-def menu_export(self, context):
+def menu_export_polymesh(self, context):
     self.layout.operator(io_polymesh.UG_OT_ExportPolyMesh.bl_idname, \
                          text="OpenFOAM PolyMesh (UG)"
+    )
+
+def menu_import_vtu(self, context):
+    self.layout.operator(io_vtu.UG_OT_ImportVtu.bl_idname, \
+                         text="VTK Unstructured Grid (.vtu) (UG)"
     )
 
 
@@ -318,6 +325,7 @@ classes = (
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
+    io_vtu.UG_OT_ImportVtu,
     ug_op.UG_OT_SelectCellsInclusive,
     ug_op.UG_OT_SelectCellsExclusive,
     ug_op.UG_OT_ResetView,
@@ -335,8 +343,9 @@ def register():
     bpy.types.Scene.ug_props = \
         bpy.props.PointerProperty(type = UGProperties)
 
-    bpy.types.TOPBAR_MT_file_import.append(menu_import)
-    bpy.types.TOPBAR_MT_file_export.append(menu_export)
+    bpy.types.TOPBAR_MT_file_import.append(menu_import_polymesh)
+    bpy.types.TOPBAR_MT_file_export.append(menu_export_polymesh)
+    bpy.types.TOPBAR_MT_file_import.append(menu_import_vtu)
 
     bpy.app.handlers.load_post.append(load_handler)
     bpy.app.handlers.save_pre.append(save_handler)
@@ -345,8 +354,9 @@ def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
-    bpy.types.TOPBAR_MT_file_import.remove(menu_import)
-    bpy.types.TOPBAR_MT_file_export.remove(menu_export)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_import_polymesh)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_export_polymesh)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_import_vtu)
 
     bpy.app.handlers.load_post.remove(load_handler)
     bpy.app.handlers.save_pre.remove(save_handler)
