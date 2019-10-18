@@ -489,7 +489,7 @@ def ug_print_face_info(ugf):
     text += "\n"
 
     if ugf.bi in facemap:
-        if facemap[ugf.bi] != f:
+        if facemap[ugf.bi] != ugf:
             text += "  ERROR: wrong facemap[%d] point to %d\n" % (ugf.bi, facemap[ugf.bi].bi)
     else:
         text += "  WARNING: no facemap found for %d\n" % ugf.bi

@@ -250,7 +250,12 @@ def polymesh_get_faces(text_owner, text_neighbour, text_faces):
 
 
     # Populate list of ugcells
-    for i in range(max(max(owner), max(neighbour)) + 1):
+    if len(neighbour) > 0:
+        nCells = max(max(owner), max(neighbour)) + 1
+    else:
+        nCells = 1 # Special case for one cell mesh
+
+    for i in range(nCells):
         # Add new UGCell
         ug.UGCell()
         if i % print_interval == 0:

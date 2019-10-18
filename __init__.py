@@ -21,7 +21,7 @@
 bl_info = {
     "name": "Unstructured Grids for Blender",
     "author": "Tuomo Keskitalo",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (2, 80, 0),
     "location": "TBA",
     "description": "Import, Editing and Export of Unstructured Grids (3D Volume Meshes)",
@@ -39,6 +39,7 @@ if "bpy" in locals():
     importlib.reload(ug_op)
     importlib.reload(ug_op_extrude)
     importlib.reload(ug_zones)
+    importlib.reload(ug_dissolve)
 else:
     import math
     import bpy
@@ -48,6 +49,7 @@ else:
         ug_op,
         ug_op_extrude,
         ug_zones,
+        ug_dissolve,
         )
     from bpy.app.handlers import persistent
     from sys import float_info
@@ -228,6 +230,12 @@ class VIEW3D_PT_UG_GUI:
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
 
         row = layout.row()
+        row.label(text="Edit topology:")
+        row = layout.row()
+        row.operator("unstructured_grids.dissolve_edges", text="Dissolve Edges", \
+                     icon='EXPERIMENTAL')
+
+        row = layout.row()
         row.label(text="Zones:")
         row = layout.row()
         row.operator("unstructured_grids.update_ugzones", text="Update from Vertex Groups")
@@ -263,7 +271,8 @@ class VIEW3D_PT_UG_GUI:
         row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
 
         row = layout.row()
-        row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
+        row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
+                     icon='EXPERIMENTAL')
 
         row = layout.row()
         row.label(text="Debug:")
@@ -316,6 +325,7 @@ classes = (
     ug_op_extrude.UG_OT_ExtrudeCells,
     ug_zones.UG_OT_EditFaceZoneOrientations,
     ug_zones.UG_OT_FinishFaceZoneOrientations,
+    ug_dissolve.UG_OT_DissolveEdges,
 )
 
 def register():
