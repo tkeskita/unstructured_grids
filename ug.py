@@ -561,6 +561,8 @@ def update_ugboundaries():
             continue
         if ugf.neighbour:
             continue
+        if ugf.bi == -1:
+            continue
 
         mati = ob.data.polygons[ugf.bi].material_index
         mat = ob.material_slots[mati]
