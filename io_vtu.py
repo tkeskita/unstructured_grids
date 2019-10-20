@@ -95,9 +95,14 @@ def validate_vtu(text):
     rec1 = re.compile(r'VTKFile\ type\=\"(.*?)\"', re.M)
     rec2 = re.compile(r'\ format\=\"(.*?)\"', re.M)
 
+    if not text:
+        return "Error: No file was selected"
+
+    match = False
     for line in text.splitlines():
         regex1 = rec1.search(line)
         if regex1:
+            match = True
             value = str(regex1.group(1))
             if value != "UnstructuredGrid":
                 return "VTK file type is not 'UnstructuredGrid' but " + value
@@ -106,6 +111,9 @@ def validate_vtu(text):
             value = str(regex2.group(1))
             if value != "ascii":
                 return "VTK file format is not 'ascii' but " + value
+
+    if not match:
+        return "Error: File does not seem to be in VTU format"
 
 
 def vtu_to_ugdata(text):
@@ -137,6 +145,9 @@ def vtu_to_ugdata(text):
     create_points(bm, points)
     vtu_datalists_to_ugdata(connectivities, offsets, celltypes, \
                             cellfaces, cellfaceoffsets)
+    bm = create_boundary_faces(bm)
+    # Add default boundary
+    patch = ug.UGBoundary("default")
     bpy.ops.object.mode_set(mode='OBJECT')
     bm.to_mesh(ob.data)
     return len(celltypes)
@@ -231,8 +242,8 @@ def vtu_add_cell(vtk_cell_type, vilist, facemap):
         '''Create and/or add faces to cell c using face index list (fis) and
         vertex indices in vilist
         '''
-        for faceverts in fis:
-            real_vilist = [vilist[v] for v in faceverts] # Actual vertex indices
+        for fisverts in fis:
+            real_vilist = [vilist[v] for v in fisverts] # Actual vertex indices
             string = get_vert_string(real_vilist) # Get facemap key
 
             # Create new UGFace or use existing. Map to owner/neighbour.
@@ -258,9 +269,11 @@ def vtu_add_cell(vtk_cell_type, vilist, facemap):
         if fulldebug: l.debug("Created cell %d: tetra" % c.ii)
 
     elif vtk_cell_type == 12: # VTK_HEXAHEDRON
-        fis = [[0,4,5,1], [0,3,2,1], [5,6,2,1], [4,7,6,5], [0,3,7,4], [7,3,2,6]]
+        # Need to invert face loop direction for hex to get normals point out
+        # fis = [[0,1,2,3], [0,4,5,1], [1,5,6,2], [2,6,7,3], [3,7,4,0], [7,6,5,4]]
+        fis = [[0,3,2,1], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7], [7,4,5,6]]
         facemap = add_cell_faces(c, fis, vilist, facemap)
-        if fulldebug: l.debug("Created cell %d: hexa" % c.ii)
+        if fulldebug: l.debug("Created cell %d: hex" % c.ii)
 
     elif vtk_cell_type == 13: # VTK_WEDGE (=prism)
         fis = [[0,1,2], [0,3,4,1], [1,4,5,2], [2,5,3,0], [3,5,4]]
@@ -289,14 +302,35 @@ def vtu_add_cell(vtk_cell_type, vilist, facemap):
 
     return facemap
 
+
 def get_vert_string(vilist):
     '''Return ordered vertex index list converted to a string'''
 
-    vilist.sort()
+    sortlist = list(vilist)
+    sortlist.sort()
     string = ""
-    for i in vilist:
+    for i in sortlist:
         string += str(i) + ","
     return string
+
+
+def create_boundary_faces(bm):
+    '''Create mesh faces for all boundary UGFaces'''
+
+    bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
+    fi = 0 # face index
+    for ugf in ug.ugfaces:
+        if not ugf.is_boundary_face():
+            continue
+        vilist = [bm.verts[v.bi] for v in ugf.ugverts]
+        f = bm.faces.new(vilist)
+        f.normal_update()
+        ugf.add_mesh_face(fi)
+        fi += 1
+
+    return bm
+
 
 ##################
 ##### EXPORT #####

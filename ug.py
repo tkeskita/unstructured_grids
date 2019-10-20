@@ -189,7 +189,7 @@ class UGFace:
 
     def is_boundary_face(self):
         '''Return True if this UGFace is a boundary face, otherwise False'''
-        if self.bi > -1 and self.neighbour == None:
+        if self.neighbour == None:
             return True
         else:
             return False
@@ -565,6 +565,16 @@ def update_ugboundaries():
             continue
 
         mati = ob.data.polygons[ugf.bi].material_index
+
+        # Create default slot and material if nothing exists
+        if len(ob.material_slots) == 0:
+            if "default" in bpy.data.materials:
+                mat = bpy.data.materials["default"]
+            else:
+                mat = bpy.data.materials.new(name="default")
+            bpy.ops.object.material_slot_add()
+            ob.active_material = mat
+
         mat = ob.material_slots[mati]
 
         while (mati >= len(ugboundaries)):
@@ -711,7 +721,7 @@ def update_ug_all_from_blender(self=None):
     # Force update zones
     update_ugzones()
     # Update PolyMesh text strings
-    io_polymesh.ugdata_to_polymesh(self)
+    io_polymesh.ugdata_to_polymesh()
 
     return True
 

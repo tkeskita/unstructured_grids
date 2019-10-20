@@ -651,7 +651,7 @@ class UG_OT_ExportPolyMesh(bpy.types.Operator, ExportHelper):
         return {'FINISHED'}
 
 
-def ugdata_to_polymesh(self):
+def ugdata_to_polymesh():
     '''Convert up-to-date UG data into PolyMesh text data strings
     and store those in ug_props.text_* string properties
     '''
