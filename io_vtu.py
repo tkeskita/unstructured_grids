@@ -40,8 +40,8 @@ import logging
 l = logging.getLogger(__name__)
 
 # Global variables
-print_interval = 100000 # Debug print progress interval
-fulldebug = True # Set to True if you wanna see walls of logging debug
+print_interval = 10000 # Debug print progress interval
+fulldebug = False # Set to True if you wanna see walls of logging debug
 
 
 ##################
@@ -128,11 +128,17 @@ def vtu_to_ugdata(text):
     bm = bmesh.new()
 
     # Get lists of data from text
+    l.debug("Reading points")
     points = get_data_array_block("Points", "float", text)
+    l.debug("Reading connectivities")
     connectivities = get_data_array_block("connectivity", "int", text)
+    l.debug("Reading offsets")
     offsets = get_data_array_block("offsets", "int", text)
+    l.debug("Reading types")
     celltypes = get_data_array_block("types", "int", text)
+    l.debug("Reading faces")
     cellfaces = get_data_array_block("faces", "int", text)
+    l.debug("Reading faceoffsets")
     cellfaceoffsets = get_data_array_block("faceoffsets", "int", text)
 
     l.debug("VTU data contains %d coordinates" % len(points) \
@@ -151,6 +157,7 @@ def vtu_to_ugdata(text):
     bpy.ops.object.mode_set(mode='OBJECT')
     bm.to_mesh(ob.data)
     return len(celltypes)
+
 
 def get_data_array_block(name, vartype, text):
     '''Return list of items (type vartype) in DataArray name from text'''
@@ -219,6 +226,7 @@ def vtu_datalists_to_ugdata(connectivities, offsets, celltypes, cellfaces, cellf
     '''Generate UGFaces and UGCells from VTU datalists'''
 
     conn_index = 0 # index for connectivities
+    offset_index = 0 # index for cellfaces offset
     facemap = dict() # dictionary to map from vertex list string to UGFace index
 
     # Loop through all cells
@@ -227,23 +235,36 @@ def vtu_datalists_to_ugdata(connectivities, offsets, celltypes, cellfaces, cellf
         conn_end = offsets[ci]
         vilist = connectivities[conn_index:conn_end] # Vertex index list
         if fulldebug: l.debug("Cell %d vertices: " % ci + str(vilist))
-        # TODO: Add polyhedron stuff here
 
-        facemap = vtu_add_cell(vtk_cell_type, vilist, facemap)
+        # Polyhedron faces are specified by data in separate cellfaces list
+        faceoffset = cellfaceoffsets[ci] + 1
+        if faceoffset == 0:
+            polyfacelist = []
+        else:
+            polyfacelist = cellfaces[offset_index:faceoffset]
+            offset_index = cellfaceoffsets[ci]
+
+        facemap = vtu_add_cell(vtk_cell_type, vilist, facemap, polyfacelist)
         conn_index += conn_end - conn_index # Increment connectivities index
 
+        if ci % print_interval == 0:
+            l.debug("... processed cell count: %d" % ci)
 
-def vtu_add_cell(vtk_cell_type, vilist, facemap):
+def vtu_add_cell(vtk_cell_type, vilist, facemap, polyfacelist):
     '''Add new cell of argument type number and vertex index list. New
     faces are added to face map
     '''
 
-    def add_cell_faces(c, fis, vilist, facemap):
+    def add_cell_faces(c, fis, vilist, facemap, is_polyhedron=False):
         '''Create and/or add faces to cell c using face index list (fis) and
-        vertex indices in vilist
+        vertex indices in vilist. If cell is polyhedron, then fis contains
+        real vertex indices. Otherwise vertex list is mapped to real vertices.
         '''
         for fisverts in fis:
-            real_vilist = [vilist[v] for v in fisverts] # Actual vertex indices
+            if is_polyhedron:
+                real_vilist = fisverts
+            else:
+                real_vilist = [vilist[v] for v in fisverts] # Actual vertex indices
             string = get_vert_string(real_vilist) # Get facemap key
 
             # Create new UGFace or use existing. Map to owner/neighbour.
@@ -259,6 +280,27 @@ def vtu_add_cell(vtk_cell_type, vilist, facemap):
             c.add_face_and_verts(ugf)
         return facemap
 
+
+    def get_polyhedron_fis(polyfacelist):
+        '''Generate face face indices (fis) from argument polyhedron face list'''
+        nFaces = polyfacelist[0] # First number is number of faces
+        # status specifies type of next number: True=numVerts, False=vert index
+        status = True
+        fis = [] # list of vertex index lists, to be generated here
+        for i in range(1, len(polyfacelist)):
+            n = polyfacelist[i]
+            if status:
+                numVerts = n
+                status = False
+                vertlist = []
+            else:
+                vertlist.append(n)
+            if len(vertlist) == numVerts:
+                fis.append(vertlist)
+                status = True
+        if nFaces != len(fis):
+            raise ValueError("Polyhedron faces list is broken: %s" % str(polyfacelist))
+        return fis
 
     # Create new cell, and depending on VTK cell type, add faces
     c = ug.UGCell()
@@ -295,7 +337,11 @@ def vtu_add_cell(vtk_cell_type, vilist, facemap):
         facemap = add_cell_faces(c, fis, vilist, facemap)
         if fulldebug: l.debug("Created cell %d: hexaprism" % c.ii)
 
-    # TODO: elif vtk_cell_type == 42: # VTK_POLYHEDRON
+    elif vtk_cell_type == 42: # VTK_POLYHEDRON
+        fis = get_polyhedron_fis(polyfacelist)
+        if fulldebug: l.debug("Polyhedron fis: %s" % str(fis))
+        facemap = add_cell_faces(c, fis, vilist, facemap, True)
+        if fulldebug: l.debug("Created cell %d: polyhedron" % c.ii)
 
     else:
         raise ValueError("Unsupported VTK cell type %d" % vtk_cell_type)
