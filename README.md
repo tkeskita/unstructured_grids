@@ -1,11 +1,12 @@
-# Unstructured Grids Add-on for Blender
+# Unstructured Grids for Blender
 
 <p align="left"><img src="examples/ug_title.png"></p>
 
 ## Introduction
 
-Unstructured Grids (UG) is an add-on for [Blender
-2.80](https://www.blender.org) for creating, importing, editing and exporting of
+[Unstructured Grids (UG)](https://github.com/tkeskita/unstructured_grids)
+is an add-on for [Blender 2.80](https://www.blender.org)
+for creating, importing, editing and exporting of
 3D volume meshes composed of arbitrary polyhedron cells (a.k.a [3D
 unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
 Add-on handles mesh topology and geometry (the definition of cells).
@@ -21,18 +22,21 @@ level.
 
 - Since volume meshes are not natively supported in Blender, 
   cell and face information related to unstructured grids are kept in
-  separate Python object data model and stored as text strings.
+  separate Python object data model. Data is stored as text strings.
   Internal faces or edges are not shown in Blender, but vertices are
   visible in Edit Mode.
 
 - Cell description is compatible with
-  [OpenFOAM PolyMesh description](https://cfd.direct/openfoam/user-guide/mesh-description/).
-  Unstructured grid is defined by lists of cells, cell faces and face
-  vertices.
+  [OpenFOAM](https://openfoam.org/)
+  [PolyMesh description](https://cfd.direct/openfoam/user-guide/mesh-description/),
+  including named boundary faces (patches), and cell and face zones.
+  Unstructured grid is defined by lists of cells, cell faces and face vertices.
+  Import and export is provided also for [VTK](https://vtk.org/)
+  [Unstructured Grid (.vtu) XML ASCII file format](https://lorensen.github.io/VTKExamples/site/VTKFileFormats/).
 
-- Except for moving of vertices, assigning of boundary faces to
-  materials (boundary patches) and assigning vertices to vertex groups
-  (zones), modifications of unstructured grids rely on special
+- Supported native Blender operations include moving of vertices, assigning
+  materials to faces (boundary patches) and assigning vertices to vertex groups
+  (zones). Otherwise, modifications of unstructured grids rely on special
   operators ('UG' in operator name) which keep UG Data and Blender
   mesh object contents in sync.
 
@@ -98,6 +102,9 @@ Currently implemented features include:
 - Dissolve Edges (merge selected vertices connected by edges)
   (Note: Experimental feature).
 
+- Import/Export of VTK Unstructured Grids (XML uncompressed ASCII
+  (.vtu) file format)
+
 
 ## Installation
 
@@ -119,8 +126,6 @@ Currently implemented features include:
 - Add integrity checks for selected UG data. E.g. calculate volume of
   cells (should not be zero), maybe check for intersections, calculate
   sum of face area weighed normals for cells (should be zero) etc.
-
-- Import/Export of VTK Unstructured Grids (XML .vtu format?)
 
 - Split Cells (Edge Division) (e.g. hexahedral cell is split to 8
   cells, tetrahedral cell is split into 4 cells)

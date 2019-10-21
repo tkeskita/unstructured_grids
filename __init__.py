@@ -23,9 +23,9 @@ bl_info = {
     "author": "Tuomo Keskitalo",
     "version": (0, 3, 0),
     "blender": (2, 80, 0),
-    "location": "TBA",
-    "description": "Import, Editing and Export of Unstructured Grids (3D Volume Meshes)",
-    "warning": "WIP",
+    "location": "File -> Import/Export, and 3D Viewport Side bar",
+    "description": "Create, Import, Edit and Export Unstructured Grids (3D Volume Meshes)",
+    "warning": "WIP and experimental, use at your own risk",
     "wiki_url": "https://github.com/tkeskita/unstructured_grids",
     "support": 'COMMUNITY',
     "category": "Mesh",
@@ -174,6 +174,11 @@ def menu_import_vtu(self, context):
                          text="VTK Unstructured Grid (.vtu) (UG)"
     )
 
+def menu_export_vtu(self, context):
+    self.layout.operator(io_vtu.UG_OT_ExportVtu.bl_idname, \
+                         text="VTK Unstructured Grid (.vtu) (UG)", \
+                         icon='EXPERIMENTAL'
+    )
 
 @persistent
 def load_handler(dummy):
@@ -216,15 +221,11 @@ class VIEW3D_PT_UG_GUI:
         row.label(text=ug.ug_print_stats())
 
         row = layout.row()
-        row.operator("unstructured_grids.import_openfoam_polymesh", text="Import PolyMesh")
-        row = layout.row()
         row.operator("unstructured_grids.update_all_from_blender", text="Update to Storage")
         row = layout.row()
         row.operator("unstructured_grids.polymesh_to_ug", text="Restore from Storage")
         row = layout.row()
         row.operator("unstructured_grids.reset_view", text="Reset View")
-        row = layout.row()
-        row.operator("unstructured_grids.export_openfoam_polymesh", text="Export PolyMesh")
 
         row = layout.row()
         row.label(text="Select Cells:")
@@ -326,6 +327,7 @@ classes = (
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
     io_vtu.UG_OT_ImportVtu,
+    io_vtu.UG_OT_ExportVtu,
     ug_op.UG_OT_SelectCellsInclusive,
     ug_op.UG_OT_SelectCellsExclusive,
     ug_op.UG_OT_ResetView,
@@ -346,6 +348,7 @@ def register():
     bpy.types.TOPBAR_MT_file_import.append(menu_import_polymesh)
     bpy.types.TOPBAR_MT_file_export.append(menu_export_polymesh)
     bpy.types.TOPBAR_MT_file_import.append(menu_import_vtu)
+    bpy.types.TOPBAR_MT_file_export.append(menu_export_vtu)
 
     bpy.app.handlers.load_post.append(load_handler)
     bpy.app.handlers.save_pre.append(save_handler)
@@ -357,6 +360,7 @@ def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_import_polymesh)
     bpy.types.TOPBAR_MT_file_export.remove(menu_export_polymesh)
     bpy.types.TOPBAR_MT_file_import.remove(menu_import_vtu)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_export_vtu)
 
     bpy.app.handlers.load_post.remove(load_handler)
     bpy.app.handlers.save_pre.remove(save_handler)

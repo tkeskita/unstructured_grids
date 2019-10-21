@@ -395,5 +395,161 @@ class UG_OT_ExportVtu(bpy.types.Operator, ExportHelper):
 
     def execute(self, context):
         ug.update_ug_all_from_blender(self)
-        # TODO: write_vtu(self)
+        write_vtu(self)
         return {'FINISHED'}
+
+
+def write_vtu(self):
+    '''Write unstuctured grid into VTU file format'''
+
+    l.debug("Generating points")
+    points, points_min, points_max, nPoints = generate_points_text()
+    l.debug("Generating connectivities")
+    connectivities = generate_connectivities_text()
+    l.debug("Generating cell types and offsets")
+    celltypes, offsets, offsets_max, nCells = generate_types_offsets_text()
+    l.debug("Generating faces and faceoffsets")
+    cellfaces, cellfaces_max, cellfaceoffsets = generate_cellfaces_text()
+    text = generate_vtu_text(points, points_min, points_max, nPoints, \
+                             connectivities, celltypes, offsets, \
+                             offsets_max, nCells, \
+                             cellfaces, cellfaces_max, cellfaceoffsets)
+    filepath = self.filepath
+    l.debug("Writing to: %s" % filepath)
+
+    with open(filepath, 'w') as outfile:
+        outfile.write(text)
+
+    self.report({'INFO'}, "Exported %d cells to  %r" % (nCells, filepath))
+    return None
+
+
+def generate_points_text():
+    '''Generate text for VTU points data'''
+
+    points = ""
+    n = 0
+    points_min = 0.0 # not needed?
+    points_max = 0.0 # not needed?
+    ob = ug.get_ug_object()
+    for ugv in ug.ugverts:
+        if ugv.deleted:
+            continue
+        # Update export index
+        ugv.ei = n
+        v = ob.data.vertices[ugv.bi]
+        points += "%.6g" % v.co.x + " " \
+                + "%.6g" % v.co.y + " " \
+                + "%.6g" % v.co.z + "\n"
+        n += 1
+    return points, points_min, points_max, n
+
+
+def generate_connectivities_text():
+    '''Generate text for VTU connectivity data'''
+
+    connectivities = ""
+    for c in ug.ugcells:
+        if c.deleted:
+            continue
+        text = ""
+        for ugv in c.ugverts:
+            text += str(ugv.ei) + " "
+        connectivities += text + "\n"
+    return connectivities
+
+
+def generate_types_offsets_text():
+    '''Generate texts for VTU types and offsets'''
+
+    # Simple implementation, generates only polyhedrons (type 42).
+    # I wonder if there is downside to this compared to generating
+    # traditional geometry elements (tetras, hexes etc.) where
+    # possible..
+    typeslist = []
+    offsetlist = []
+    nVert = 0
+    nCells = 0
+    for c in ug.ugcells:
+        if c.deleted:
+            continue
+        typeslist.append(42)
+        nVert += len(c.ugverts)
+        offsetlist.append(nVert)
+        nCells += 1
+    # Convert from integer lists to space separated text
+    celltypes = " ".join(map(str, typeslist)) + "\n"
+    offsets = " ".join(map(str, offsetlist)) + "\n"
+    return celltypes, offsets, offsetlist[-1], nCells
+
+
+def generate_cellfaces_text():
+    '''Generate texts for VTU polyhedron faces and faceoffsets'''
+
+    cellfaces = ""
+    cellfaceoffsets = ""
+    offset = 0
+    for c in ug.ugcells:
+        faceslist = [len(c.ugfaces)] # Number of faces comes first
+        if c.deleted:
+            continue
+        for ugf in c.ugfaces:
+            faceslist.append(len(ugf.ugverts)) # Number of vertices per face
+            for ugv in ugf.ugverts:
+                faceslist.append(ugv.ei)
+        cellfaces += " ".join(map(str, faceslist)) + "\n"
+        cellfaceoffsets += str(offset + len(faceslist)) + " "
+        offset += len(faceslist)
+    return cellfaces, offset, cellfaceoffsets + "\n"
+
+
+def generate_vtu_text(points, points_min, points_max, nPoints, \
+                      connectivities, celltypes, offsets,
+                      offsets_max, nCells, \
+                      cellfaces, cellfaces_max, cellfaceoffsets):
+    '''Embed generated data strings to vtu text format'''
+
+    # Header
+    text = '''<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">
+  <UnstructuredGrid>
+    <Piece NumberOfPoints="'''
+    text += str(nPoints) + "\" NumberOfCells=\"" + \
+            str(nCells) + '''">
+      <PointData>
+      </PointData>
+      <CellData>
+      </CellData>
+      <Points>
+        <DataArray type="Float32" Name="Points" NumberOfComponents="3" format="ascii" RangeMin="'''
+    text += str(points_min) +"\" RangeMax=\"" + \
+            str(points_max) +"\">\n"
+    text += points
+    text += '''       </DataArray>
+      </Points>
+      <Cells>
+        <DataArray type="Int64" Name="connectivity" format="ascii" RangeMin="0" RangeMax="'''
+    text += str(nPoints - 1) + "\">\n"
+    text += connectivities
+    text += '''        </DataArray>
+        <DataArray type="Int64" Name="offsets" format="ascii" RangeMin="0" RangeMax="'''
+    text += str(offsets_max) + "\">\n"
+    text += offsets
+    text += '''        </DataArray>
+        <DataArray type="UInt8" Name="types" format="ascii" RangeMin="0" RangeMax="'''
+    text += "42\">\n"
+    text += celltypes
+    text += '''        </DataArray>
+        <DataArray type="Int64" Name="faces" format="ascii" RangeMin="0" RangeMax="'''
+    text += str(nPoints) + "\">\n"
+    text += cellfaces
+    text += '''        </DataArray>
+        <DataArray type="Int64" Name="faceoffsets" format="ascii" RangeMin="0" RangeMax="'''
+    text += str(cellfaces_max) +"\">\n"
+    text += cellfaceoffsets
+    text += '''        </DataArray>
+      </Cells>
+    </Piece>
+  </UnstructuredGrid>
+</VTKFile>
+'''
+    return text
