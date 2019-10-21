@@ -237,12 +237,12 @@ def vtu_datalists_to_ugdata(connectivities, offsets, celltypes, cellfaces, cellf
         if fulldebug: l.debug("Cell %d vertices: " % ci + str(vilist))
 
         # Polyhedron faces are specified by data in separate cellfaces list
-        faceoffset = cellfaceoffsets[ci] + 1
-        if faceoffset == 0:
-            polyfacelist = []
-        else:
+        if vtk_cell_type == 42:
+            faceoffset = cellfaceoffsets[ci] + 1
             polyfacelist = cellfaces[offset_index:faceoffset]
             offset_index = cellfaceoffsets[ci]
+        else:
+            polyfacelist = []
 
         facemap = vtu_add_cell(vtk_cell_type, vilist, facemap, polyfacelist)
         conn_index += conn_end - conn_index # Increment connectivities index
