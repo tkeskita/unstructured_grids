@@ -198,18 +198,20 @@ class UG_OT_PrintSelectedCellsInfo(bpy.types.Operator):
 
     def execute(self, context):
         clist = ug_op.select_cells_exclusive()
+        text = "Info for selected %d cells\n\n" % len(clist)
         for c in clist:
-            ug_print_cell_info(c)
-        self.report({'INFO'}, "%d cell infos printed " % len(clist) \
-                    + "to terminal (via Python Logging)")
+            text += ug_print_cell_info(c)
+        set_text_to_text_block(text)
+        l.debug(text.strip("\n"))
+        self.report({'INFO'}, "%d cell infos printed." % len(clist) \
+                    + " See 'UG' Text Block.")
         return {'FINISHED'}
 
 
 def ug_print_cell_info(c):
     '''Print information about argument cell'''
 
-    text = "Cell info:\n"
-    text += "Cell %d " % c.ii
+    text = "Cell %d " % c.ii
     if c.deleted:
         text += "(DELETED) "
     text += "contains %d UGFaces " % len(c.ugfaces)
@@ -233,9 +235,7 @@ def ug_print_cell_info(c):
     for v in c.ugverts:
         text += "%d " % v.bi
     text += "\n"
-
-    # TODO: Also print to Blender text block?
-    l.debug(text)
+    return text
 
 
 class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
@@ -255,18 +255,20 @@ class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.mode_set(mode='EDIT')
         flist = [f for f in ob.data.polygons if f.select]
+        text = "Info for selected %d faces\n\n" % len(flist)
         for f in flist:
-            ug_print_face_info(ug.facemap[f.index])
-        self.report({'INFO'}, "%d face infos printed " % len(flist) \
-                    + "to terminal (via Python Logging)")
+            text += ug_print_face_info(ug.facemap[f.index])
+        set_text_to_text_block(text)
+        l.debug(text.strip("\n"))
+        self.report({'INFO'}, "%d face infos printed." % len(flist) \
+                    + " See 'UG' Text Block.")
         return {'FINISHED'}
 
 
 def ug_print_face_info(ugf):
     '''Print information about argument UGFace'''
 
-    text = "Face info:\n"
-    text += "Mesh face %d " % ugf.bi
+    text = "Mesh face %d " % ugf.bi
     if ugf.deleted:
         text += "(DELETED) "
     text += "contains %d UGVerts: " % len(ugf.ugverts)
@@ -293,8 +295,7 @@ def ug_print_face_info(ugf):
     else:
         text += "  WARNING: no facemap found for %d\n" % ugf.bi
 
-    # TODO: Also print to Blender text block?
-    l.debug(text)
+    return text
 
 
 class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
@@ -307,7 +308,9 @@ class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
         return context.mode in {'EDIT_MESH'}
 
     def execute(self, context):
-        print_selected_vertex_indices()
+        n = print_selected_vertex_indices()
+        self.report({'INFO'}, "%d vertex infos printed." % n \
+                    + " See 'UG' Text Block.")
         return {'FINISHED'}
 
 
@@ -318,5 +321,11 @@ def print_selected_vertex_indices():
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
     verts = [v for v in ob.data.vertices if v.select]
+
+    text = "Selected vertices: "
     for v in verts:
-        l.debug("Selected vertex %d" % v.index)
+        text += "%d " % v.index
+
+    set_text_to_text_block(text)
+    l.debug(text.strip("\n"))
+    return len(v)
