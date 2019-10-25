@@ -105,6 +105,8 @@ Currently implemented features include:
 - Import/Export of VTK Unstructured Grids (XML uncompressed ASCII
   (.vtu) file format)
 
+- Cell integrity check and statistics routine (Check Selected Cells)
+
 
 ## Installation
 
@@ -122,10 +124,6 @@ Currently implemented features include:
 
 
 ## Development Ideas for Future
-
-- Add integrity checks for selected UG data. E.g. calculate volume of
-  cells (should not be zero), maybe check for intersections, calculate
-  sum of face area weighed normals for cells (should be zero) etc.
 
 - Split Cells (Edge Division) (e.g. hexahedral cell is split to 8
   cells, tetrahedral cell is split into 4 cells)

@@ -324,9 +324,6 @@ classes = (
     ug.UG_OT_UpdateBoundariesFromFaceMaterials,
     ug.UG_OT_UpdateZonesFromVertexGroups,
     ug.UG_OT_UpdateUGAllFromBlender,
-    ug.UG_OT_PrintSelectedCellsInfo,
-    ug.UG_OT_PrintSelectedFacesInfo,
-    ug.UG_OT_PrintSelectedVertexIndices,
     io_polymesh.UG_OT_ImportPolyMesh,
     io_polymesh.UG_OT_ExportPolyMesh,
     io_polymesh.UG_OT_PolyMeshToUG,
@@ -341,6 +338,9 @@ classes = (
     ug_zones.UG_OT_FinishFaceZoneOrientations,
     ug_dissolve.UG_OT_DissolveEdges,
     ug_checks.UG_OT_CheckCells,
+    ug_checks.UG_OT_PrintSelectedCellsInfo,
+    ug_checks.UG_OT_PrintSelectedFacesInfo,
+    ug_checks.UG_OT_PrintSelectedVertexIndices,
 )
 
 def register():

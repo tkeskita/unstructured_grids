@@ -185,3 +185,138 @@ def set_text_to_text_block(text):
                 continue
             space.text = t
             space.top = 0
+
+
+class UG_OT_PrintSelectedCellsInfo(bpy.types.Operator):
+    '''Print information about selected cells'''
+    bl_idname = "unstructured_grids.print_info_of_selected_cells"
+    bl_label = "Print Selected UG Cell Info"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH' and ug.exists_ug_state()
+
+    def execute(self, context):
+        clist = ug_op.select_cells_exclusive()
+        for c in clist:
+            ug_print_cell_info(c)
+        self.report({'INFO'}, "%d cell infos printed " % len(clist) \
+                    + "to terminal (via Python Logging)")
+        return {'FINISHED'}
+
+
+def ug_print_cell_info(c):
+    '''Print information about argument cell'''
+
+    text = "Cell info:\n"
+    text += "Cell %d " % c.ii
+    if c.deleted:
+        text += "(DELETED) "
+    text += "contains %d UGFaces " % len(c.ugfaces)
+    text += "and %d UGVerts\n" % len(c.ugverts)
+
+    text += "  mesh face indices: "
+    for f in c.ugfaces:
+        text += "%d " % f.bi
+    text += "\n"
+
+    text += "  face ownership: "
+    for f in c.ugfaces:
+        if f.owner == c:
+            text += "O"
+        if f.neighbour == c:
+            text += "N"
+        text += " "
+    text += "\n"
+
+    text += "  mesh vertex indices: "
+    for v in c.ugverts:
+        text += "%d " % v.bi
+    text += "\n"
+
+    # TODO: Also print to Blender text block?
+    l.debug(text)
+
+
+class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
+    '''Print information about selected faces'''
+    bl_idname = "unstructured_grids.print_info_of_selected_faces"
+    bl_label = "Print Selected UG Face Info (via Python Logging)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH' and ug.exists_ug_state()
+
+    def execute(self, context):
+        ob = ug.get_ug_object()
+        mode = ob.mode # Save original mode
+        # Return to object mode to update selection
+        if mode == 'EDIT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode='EDIT')
+        flist = [f for f in ob.data.polygons if f.select]
+        for f in flist:
+            ug_print_face_info(ug.facemap[f.index])
+        self.report({'INFO'}, "%d face infos printed " % len(flist) \
+                    + "to terminal (via Python Logging)")
+        return {'FINISHED'}
+
+
+def ug_print_face_info(ugf):
+    '''Print information about argument UGFace'''
+
+    text = "Face info:\n"
+    text += "Mesh face %d " % ugf.bi
+    if ugf.deleted:
+        text += "(DELETED) "
+    text += "contains %d UGVerts: " % len(ugf.ugverts)
+
+    for v in ugf.ugverts:
+        text += "%d " % v.bi
+
+    text += "owner: "
+    if ugf.owner != None:
+        text += "%d " % ugf.owner.ii
+    else:
+        text += "None "
+
+    text += "neighbour: "
+    if ugf.neighbour != None:
+        text += "%d" % ugf.neighbour.ii
+    else:
+        text += "None"
+    text += "\n"
+
+    if ugf.bi in ug.facemap:
+        if ug.facemap[ugf.bi] != ugf:
+            text += "  ERROR: wrong facemap[%d] point to %d\n" % (ugf.bi, ug.facemap[ugf.bi].bi)
+    else:
+        text += "  WARNING: no facemap found for %d\n" % ugf.bi
+
+    # TODO: Also print to Blender text block?
+    l.debug(text)
+
+
+class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
+    '''Debug print indices of selected vertices'''
+    bl_idname = "unstructured_grids.print_selected_vertex_indices"
+    bl_label = "Print Selected Vertex Indices"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'EDIT_MESH'}
+
+    def execute(self, context):
+        print_selected_vertex_indices()
+        return {'FINISHED'}
+
+
+def print_selected_vertex_indices():
+    '''Debug print indices of selected vertices'''
+
+    ob = ug.get_ug_object()
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    verts = [v for v in ob.data.vertices if v.select]
+    for v in verts:
+        l.debug("Selected vertex %d" % v.index)
