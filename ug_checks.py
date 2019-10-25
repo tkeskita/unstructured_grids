@@ -250,17 +250,19 @@ class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
     def execute(self, context):
         ob = ug.get_ug_object()
         mode = ob.mode # Save original mode
-        # Return to object mode to update selection
-        if mode == 'EDIT':
-            bpy.ops.object.mode_set(mode='OBJECT')
-            bpy.ops.object.mode_set(mode='EDIT')
-        flist = [f for f in ob.data.polygons if f.select]
-        text = "Info for selected %d faces\n\n" % len(flist)
-        for f in flist:
-            text += ug_print_face_info(ug.facemap[f.index])
+        # Visit object mode to update selection
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        vilist = [v.index for v in ob.data.vertices if v.select]
+        ugflist = ug_op.get_ugfaces_from_vertices_exclusive(vilist)
+        text = "Info for selected %d faces\n\n" % len(ugflist)
+        for ugf in ugflist:
+            text += ug_print_face_info(ugf)
+
         set_text_to_text_block(text)
         l.debug(text.strip("\n"))
-        self.report({'INFO'}, "%d face infos printed." % len(flist) \
+        self.report({'INFO'}, "%d face infos printed." % len(ugflist) \
                     + " See 'UG' Text Block.")
         return {'FINISHED'}
 
@@ -268,10 +270,22 @@ class UG_OT_PrintSelectedFacesInfo(bpy.types.Operator):
 def ug_print_face_info(ugf):
     '''Print information about argument UGFace'''
 
-    text = "Mesh face %d " % ugf.bi
+    if ugf.bi == -1:
+        text = "Internal face "
+        if ugf.ei == -1:
+            text += "(no indices)"
+        else:
+            text += "(export index %d)" % ugf.ei
+    else:
+        text = "Boundary face "
+        if ugf.ei == -1:
+            text += "(mesh index %d)" % ugf.bi
+        else:
+            text += "(mesh index %d, export index %d)" % (ugf.bi, ugf.ei)
+
     if ugf.deleted:
-        text += "(DELETED) "
-    text += "contains %d UGVerts: " % len(ugf.ugverts)
+        text += " (DELETED)"
+    text += " contains %d UGVerts: " % len(ugf.ugverts)
 
     for v in ugf.ugverts:
         text += "%d " % v.bi
@@ -292,8 +306,6 @@ def ug_print_face_info(ugf):
     if ugf.bi in ug.facemap:
         if ug.facemap[ugf.bi] != ugf:
             text += "  ERROR: wrong facemap[%d] point to %d\n" % (ugf.bi, ug.facemap[ugf.bi].bi)
-    else:
-        text += "  WARNING: no facemap found for %d\n" % ugf.bi
 
     return text
 
@@ -317,7 +329,7 @@ class UG_OT_PrintSelectedVertexIndices(bpy.types.Operator):
 def print_selected_vertex_indices():
     '''Debug print indices of selected vertices'''
 
-    ob = ug.get_ug_object()
+    ob = bpy.context.active_object
     bpy.ops.object.mode_set(mode = 'OBJECT')
     bpy.ops.object.mode_set(mode = 'EDIT')
     verts = [v for v in ob.data.vertices if v.select]
@@ -328,4 +340,4 @@ def print_selected_vertex_indices():
 
     set_text_to_text_block(text)
     l.debug(text.strip("\n"))
-    return len(v)
+    return len(verts)

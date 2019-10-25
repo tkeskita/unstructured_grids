@@ -285,13 +285,15 @@ class VIEW3D_PT_UG_GUI:
                      icon='EXPERIMENTAL')
 
         row = layout.row()
-        row.label(text="Debug:")
+        row.label(text="Debug Selected Items:")
         row = layout.row()
-        row.operator("unstructured_grids.check_cells", text="Check Selected Cells")
+        row.operator("unstructured_grids.check_cells", text="Check Cells")
         row = layout.row()
         row.operator("unstructured_grids.print_info_of_selected_cells", text="Print Cell Info")
         row = layout.row()
         row.operator("unstructured_grids.print_info_of_selected_faces", text="Print Face Info")
+        row = layout.row()
+        row.operator("unstructured_grids.print_selected_vertex_indices", text="Print Vertex Indices")
 
         # Object Mode warning
         if context.mode == 'OBJECT':
