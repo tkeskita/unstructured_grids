@@ -41,6 +41,7 @@ if "bpy" in locals():
     importlib.reload(ug_op_extrude)
     importlib.reload(ug_zones)
     importlib.reload(ug_dissolve)
+    importlib.reload(ug_checks)
 else:
     import math
     import bpy
@@ -52,6 +53,7 @@ else:
         ug_op_extrude,
         ug_zones,
         ug_dissolve,
+        ug_checks,
         )
     from bpy.app.handlers import persistent
     from sys import float_info
@@ -285,6 +287,8 @@ class VIEW3D_PT_UG_GUI:
         row = layout.row()
         row.label(text="Debug:")
         row = layout.row()
+        row.operator("unstructured_grids.check_cells", text="Check Selected Cells")
+        row = layout.row()
         row.operator("unstructured_grids.print_info_of_selected_cells", text="Print Cell Info")
         row = layout.row()
         row.operator("unstructured_grids.print_info_of_selected_faces", text="Print Face Info")
@@ -336,6 +340,7 @@ classes = (
     ug_zones.UG_OT_EditFaceZoneOrientations,
     ug_zones.UG_OT_FinishFaceZoneOrientations,
     ug_dissolve.UG_OT_DissolveEdges,
+    ug_checks.UG_OT_CheckCells,
 )
 
 def register():
