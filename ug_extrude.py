@@ -269,6 +269,45 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
                 vec += norvec
             return (vec / float(len(norvecs)))
 
+
+        def get_coeffs(v, faces):
+            '''Calculate vector length coefficient'''
+
+            # Note: This idea of pushing convex vertices further out
+            # to fill cavities works only partially. If pushing effect
+            # is small, there will be intersections. If pushing effect
+            # is large, then extrusion becomes unstable. Vertex
+            # smoothing of some kind seems to be needed additionally,
+            # so maybe it would be better to base coeff also on
+            # smoothing?
+
+            coeff = 0.0
+            for e in v.link_edges:
+                efaces = [f for f in e.link_faces if f in faces]
+                if len(efaces) == 2:
+                    if fulldebug: l.debug("edge %s: " % str(e))
+                    f0 = efaces[0]
+                    f1 = efaces[1]
+
+                    # face-face edge angle
+                    cos_epsilon = face_face_cos_angle(e, f0, f1)
+                    if fulldebug: l.debug("  cos_epsilon = %f" % cos_epsilon)
+
+                    # Angle between face center-to-face center and first face normal
+                    vec_f2f = f0.calc_center_median() - f1.calc_center_median()
+                    vec_f2f.normalize()
+                    cos_theta = vec_f2f @ f0.normal
+                    if fulldebug: l.debug("  cos_theta = %f" % cos_theta)
+
+                    if cos_theta < 0.0:
+                        coeff = max(coeff, cos_epsilon + 1)
+
+            # Amplify and shift
+            coeff *= 5.0
+            coeff += 1.0
+            return coeff
+
+
         from mathutils import Vector
         ug_props = bpy.context.scene.ug_props
 
@@ -281,9 +320,8 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         coeffs = [] # new extrusion length coefficients to be calculated
 
         for v in verts:
-            # Extrusion direction is calculated as average of
-            # surrounding face normal vectors.
             norvecs = []
+            faces = []
             for f in v.link_faces:
                 fi = f.index
                 uf = ug.facemap[fi]
@@ -295,12 +333,14 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
                     if f.select == False:
                         continue
                 norvecs.append(f.normal)
+                faces.append(f)
 
             # Extrusion direction
             vdir.append(get_vdir(norvecs))
 
-            # Length coefficient, TODO
-            coeffs.append(1.0)
+            # Length coefficient
+            coeffs.append(get_coeffs(v, faces))
+            l.debug("vert %d coeff %f" % (v.index, coeffs[-1]))
 
         return vdir, coeffs
 
@@ -496,3 +536,83 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         ugf.invert_face_dir()
 
     return bm, len(faces), vdir, coeffs, new_ugfaces
+
+
+def bmesh_edge_center(edge):
+    '''Calculates coordinates for edge center using edge vertex
+    coordinates
+    '''
+    return (edge.verts[0].co + edge.verts[1].co) / 2
+
+
+def face_face_cos_angle(e, f, f_neighbor):
+    '''Calculate cosine of angle between two connected bmesh faces, which
+    share a common edge e. Return None if edge does not connect two
+    faces.
+    '''
+
+    # Make sure edge connects given two faces before continuing
+    etest = [etest for etest in f.edges if etest in f_neighbor.edges]
+    if e not in etest:
+        return None
+
+    # face center coordinates
+    f_center = f.calc_center_median()
+    f_neighbor_center = f_neighbor.calc_center_median()
+    return edge_vec_vec_cos_angle(e, f_center, f_neighbor_center)
+
+
+def edge_vec_vec_cos_angle(e, vec1, vec2):
+    """Calculates cosine of angle between two vectors which are
+    orthogonal projections for edge e. This is used to calculate
+    cos(angle) for two faces which share edge e, and vec1 and vec2
+    represent the faces' center coordinate vectors.
+    """
+
+    # Calculate cos(epsilon) where epsilon is the angle between the two
+    # faces connected by edge e. cos(epsilon) is mathematically angle between
+    # vectors e_ortho_f -> f_center and e_ortho_f_neighbor -> f_neighbor_center.
+    # e_ortho_f is point along edge e which forms 90 degree angle between
+    # edge point 1 -> edge point 2 and e_ortho_f -> f_center.
+    # Similarly e_ortho_f_neighbor is point along edge e which forms 90 degree
+    # angle between edge point 1 -> edge point 2 and
+    # e_ortho_f_neighbor -> f_neighbor_center.
+    #
+    # Diagram example with two triangular faces: + marks face boundary edges,
+    # x = e_ortho_f, y = e_ortho_f_neighbor, c = edge or face center
+    #
+    #      +++
+    #     +   +++++
+    #    +  c       +++++            <-- f
+    #   +   I            +++++++
+    #  1----x------c---y--------2    <-- edge e
+    #   +++++          I      ++
+    #        +++++     c   +++       <-- f_neighbor
+    #             ++++   ++
+    #                 +++
+
+    e_center = bmesh_edge_center(e) # edge center
+    vec_e = e.verts[1].co - e.verts[0].co # edge vector
+
+    # Calculate orthogonal vector e_ortho_f -> f_center and normalize it
+    f_center = vec1 # face center coordinates
+    vec_f_center = f_center - e_center
+    project_f = vec_f_center.project(vec_e) # project vec_f to vec_e
+    e_ortho_f = e_center + project_f # coordinates for x
+    vec_ortho_f = f_center - e_ortho_f # orthogonal vector
+    vec_ortho_f.normalize() # normalize it
+
+    # Similarly to above, calculate orthogonal vector
+    # e_ortho_f_neighbor -> f_neighbor_center and normalize it
+    f_neighbor_center = vec2
+    vec_f_neighbor_center = f_neighbor_center - e_center
+    project_f_neighbor = vec_f_neighbor_center.project(vec_e)
+    e_ortho_f_neighbor = e_center + project_f_neighbor
+    vec_ortho_f_neighbor = f_neighbor_center - e_ortho_f_neighbor
+    vec_ortho_f_neighbor.normalize()
+
+    # Finally calculate cos(angle) between faces
+    cos_epsilon = vec_ortho_f @ vec_ortho_f_neighbor
+    # Limit -1.0 <= cos_epsilon <= 1.0 for physical correctness
+    cos_epsilon = max(-1.0, min(1.0, cos_epsilon))
+    return cos_epsilon
