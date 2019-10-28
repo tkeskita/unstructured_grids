@@ -38,7 +38,7 @@ if "bpy" in locals():
     importlib.reload(io_polymesh)
     importlib.reload(io_vtu)
     importlib.reload(ug_op)
-    importlib.reload(ug_op_extrude)
+    importlib.reload(ug_extrude)
     importlib.reload(ug_zones)
     importlib.reload(ug_dissolve)
     importlib.reload(ug_checks)
@@ -50,7 +50,7 @@ else:
         io_polymesh,
         io_vtu,
         ug_op,
-        ug_op_extrude,
+        ug_extrude,
         ug_zones,
         ug_dissolve,
         ug_checks,
@@ -335,7 +335,7 @@ classes = (
     ug_op.UG_OT_SelectCellsExclusive,
     ug_op.UG_OT_ResetView,
     ug_op.UG_OT_DeleteCells,
-    ug_op_extrude.UG_OT_ExtrudeCells,
+    ug_extrude.UG_OT_ExtrudeCells,
     ug_zones.UG_OT_EditFaceZoneOrientations,
     ug_zones.UG_OT_FinishFaceZoneOrientations,
     ug_dissolve.UG_OT_DissolveEdges,
