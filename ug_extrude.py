@@ -262,6 +262,13 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         mesh vertex.
         '''
 
+        def get_vdir(norvecs):
+            '''Calculate vector direction from argument normal vectors'''
+            vec = Vector((0, 0, 0))
+            for norvec in norvecs:
+                vec += norvec
+            return (vec / float(len(norvecs)))
+
         from mathutils import Vector
         ug_props = bpy.context.scene.ug_props
 
@@ -276,8 +283,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
         for v in verts:
             # Extrusion direction is calculated as average of
             # surrounding face normal vectors.
-            n = 0
-            vec = Vector((0, 0, 0))
+            norvecs = []
             for f in v.link_faces:
                 fi = f.index
                 uf = ug.facemap[fi]
@@ -288,9 +294,10 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
                 if ug_props.extrusion_ignores_unselected_face_normals:
                     if f.select == False:
                         continue
-                vec += f.normal
-                n += 1
-            vdir.append(vec / float(n))
+                norvecs.append(f.normal)
+
+            # Extrusion direction
+            vdir.append(get_vdir(norvecs))
 
             # Length coefficient, TODO
             coeffs.append(1.0)
