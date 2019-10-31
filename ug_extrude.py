@@ -26,6 +26,7 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 fulldebug = False # Set to True if you wanna see walls of logging debug
+smoothing_factor = 0.5 # TODO: parametrize
 
 # Summary of extrusion method: Extrusion starts from selected mesh
 # faces (base faces). Each face produces one new cell (in matching
@@ -272,14 +273,13 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
 
         def get_coeffs(v, faces):
             '''Calculate vector length coefficient'''
+            #return 1.0
 
-            # Note: This idea of pushing convex vertices further out
-            # to fill cavities works only partially. If pushing effect
-            # is small, there will be intersections. If pushing effect
-            # is large, then extrusion becomes unstable. Vertex
-            # smoothing of some kind seems to be needed additionally,
-            # so maybe it would be better to base coeff also on
-            # smoothing?
+            # Note: Idea here is to push convex vertices further out
+            # to fill cavities. Alone, it works only partially.
+            # If pushing effect is small, there will be intersections.
+            # If pushing effect is large, then extrusion becomes
+            # unstable. Therefore smoothing is required additionally.
 
             coeff = 0.0
             for e in v.link_edges:
@@ -300,10 +300,10 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
                     if fulldebug: l.debug("  cos_theta = %f" % cos_theta)
 
                     if cos_theta < 0.0:
-                        coeff = max(coeff, cos_epsilon + 1)
+                        coeff = max(coeff, cos_epsilon + 1) # TODO: Improve this somehow?
 
             # Amplify and shift
-            coeff *= 5.0
+            coeff *= 2.0 # TODO: parametrize?
             coeff += 1.0
             return coeff
 
@@ -340,7 +340,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
 
             # Length coefficient
             coeffs.append(get_coeffs(v, faces))
-            l.debug("vert %d coeff %f" % (v.index, coeffs[-1]))
+            if fulldebug: l.debug("vert %d coeff %f" % (v.index, coeffs[-1]))
 
         return vdir, coeffs
 
@@ -496,6 +496,133 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, new_ugfaces):
 
     correct_face_normals(bm, faces, ugci0)
 
+
+    def smoothen_verts(bm, vdir):
+        '''Smoothen boundary vertex locations'''
+
+        def get_edges_of_faces(faces):
+            '''Return list of unique edges of argument faces'''
+            edges = []
+            for f in faces:
+                for e in f.edges:
+                    if e not in edges:
+                        edges.append(e)
+            return edges
+
+        def get_faces_of_vert(v, faces):
+            '''Get the faces from faces list which are faces of vertex v'''
+            vertfaces = []
+            for vf in v.link_faces:
+                if vf in faces:
+                    vertfaces.append(vf)
+            return vertfaces
+
+        def get_verts_of_faces(vx, faces):
+            '''Get list of vertices of argument faces, excluding vertex vx'''
+            tot_area = 0.0 # total area of all faces
+            for f in faces:
+                tot_area += f.calc_area()
+
+            verts = []
+            weights = []
+            for f in faces:
+                weight = f.calc_area() / tot_area
+                nverts = 0
+                for v in f.verts:
+                    if v == vx:
+                        continue
+                    if v not in verts:
+                        verts.append(v)
+                        weights.append(weight)
+            return verts, weights
+
+        def new_internal_co_from_verts(v, verts, weights):
+            '''Calculate new location for argument vertex v from verts and weights'''
+            from mathutils import Vector
+            co = Vector((0, 0, 0))
+            nverts = len(verts)
+            for i in range(nverts):
+                co += (verts[i].co - v.co) * weights[i] / nverts * smoothing_factor
+            if fulldebug: l.debug("co %s %f" % (str(co), co.length))
+            if fulldebug: l.debug("max weight %f" % max(weights))
+            return v.co + co
+
+        def new_boundary_co_from_verts(v, v1, v2):
+            '''Calculate new vertex v location from neighbour boundary vertices
+            v1 and v2
+            '''
+            vec1 = (v1.co - v.co)
+            vec2 = (v2.co - v.co)
+
+            # Do nothing for corner vertices
+            cos_alpha = vec1.normalized() @ vec2.normalized()
+            if fulldebug: l.debug("cos_alpha %f" % cos_alpha)
+            max_cos_angle = 2.5e-1 # maximum angle cosine to detect corners
+            if abs(cos_alpha) < max_cos_angle:
+                return v.co
+
+            sqlen1 = vec1.length * vec1.length
+            sqlen2 = vec2.length * vec2.length
+            sqtot = sqlen1 + sqlen2
+            co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
+            return v.co + co
+
+        def is_boundary_vertex_among_faces(v, edges, faces):
+            '''Return True if argument vertex v is a boundary vertex among
+            argument edges and faces. Vertex is boundary vertex if it
+            is connected to an edge that is part of only one face.
+            Returns also neighbour vertices (or None for no boundary edges)
+            '''
+            neighbour_verts = []
+            for e in v.link_edges:
+                if e not in edges:
+                    continue
+                link_faces = [x for x in e.link_faces if x in faces]
+                if len(link_faces) == 1:
+                    neighbour_verts.append(e.other_vert(v))
+            if len(neighbour_verts) == 2:
+                return True, neighbour_verts[0], neighbour_verts[1]
+            return False, None, None
+
+        # Only selected faces are processed
+        faces = [f for f in bm.faces if f.select]
+        edges = get_edges_of_faces(faces)
+        verts = [] # vertices
+        coords = {} # Dictionary to map vertex to new coordinate
+
+        # Generate new coordinates
+        for f in faces:
+            for v in f.verts:
+                if v in verts:
+                    continue
+                verts.append(v)
+
+                is_boundary_vertex, v1, v2 = \
+                    is_boundary_vertex_among_faces(v, edges, faces)
+
+                # Boundary vertices use boundary edges
+                if is_boundary_vertex:
+                    if fulldebug: l.debug("Boundary vertex %d" % v.index)
+                    co = new_boundary_co_from_verts(v, v1, v2)
+
+                # Internal vertices use faces
+                else:
+                    if fulldebug: l.debug("Internal vertex %d" % v.index)
+                    vertfaces = get_faces_of_vert(v, faces)
+                    nbverts, weights = get_verts_of_faces(v, vertfaces)
+                    co = new_internal_co_from_verts(v, nbverts, weights)
+
+                if fulldebug: l.debug("Move vertex %d " % v.index \
+                                      + "from %s to %s" % (str(v.co), str(co)))
+                coords[v] = co
+
+        # Move vertices to new coordinates
+        for v in coords:
+            v.co = coords[v]
+
+    # Loop vertex smoothing
+    for i in range(3): # TODO: parametrize
+        smoothen_verts(bm, vdir)
 
     def add_base_face_to_cells(faces, ugci0):
         '''Add base faces to cells as neighbours'''
