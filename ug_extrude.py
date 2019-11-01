@@ -26,7 +26,6 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 fulldebug = False # Set to True if you wanna see walls of logging debug
-smoothing_factor = 0.2 # 0.7 # TODO: parametrize
 
 # Summary of extrusion method: Extrusion starts from selected mesh
 # faces (base faces). Each face produces one new cell (in matching
@@ -286,7 +285,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             # to avoid self-intersections, so smoothing is inhibited.
 
             coeff = 0.0
-            cos_theta = 0.0 # edge type: >0 = concave, <0 = convex
+            max_cos_theta = -1.0
             for e in v.link_edges:
                 efaces = [f for f in e.link_faces if f in faces]
                 if len(efaces) == 2:
@@ -302,20 +301,21 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
                     vec_f2f = f0.calc_center_median() - f1.calc_center_median()
                     vec_f2f.normalize()
                     cos_theta = vec_f2f @ f0.normal
+                    if cos_theta > max_cos_theta:
+                        max_cos_theta = cos_theta
                     if fulldebug: l.debug("  cos_theta = %f" % cos_theta)
 
                     if cos_theta < 0.0:
                         coeff = max(coeff, cos_epsilon + 1) # TODO: Improve this somehow?
 
-            # Length coefficient: Amplify and shift
-            coeff *= 2.0 # TODO: parametrize?
+            # Length coefficient: Scale and shift
+            ug_props = bpy.context.scene.ug_props
+            coeff *= ug_props.extrusion_length_factor
             coeff += 1.0
 
-            # Smoothing inhibition coefficient. TODO: Improve, this is too rigid?
-            if cos_theta > 0.0:
-                inhibition = 0.0
-            else:
-                inhibition = 1.0
+            # Smoothing inhibition coefficient
+            inhibition = ug_props.extrusion_inhibition_factor * max_cos_theta
+            inhibition = 1.0 - max(0.0, min(inhibition, 1.0)) # limit to 0 < x < 1
 
             return coeff, inhibition
 
@@ -556,6 +556,8 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
         def new_internal_co_from_verts(v, verts, weights):
             '''Calculate new location for argument vertex v from verts and weights'''
             from mathutils import Vector
+            ug_props = bpy.context.scene.ug_props
+            smoothing_factor = ug_props.extrusion_smoothing_factor
             co = Vector((0, 0, 0))
             nverts = len(verts)
             for i in range(nverts):
@@ -590,6 +592,8 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             '''Calculate new vertex v location from neighbour boundary vertices
             v1 and v2
             '''
+            ug_props = bpy.context.scene.ug_props
+            smoothing_factor = ug_props.extrusion_smoothing_factor
             vec1 = (v1.co - v.co)
             vec2 = (v2.co - v.co)
 

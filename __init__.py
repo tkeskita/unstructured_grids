@@ -154,6 +154,24 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0,
         min=0, max=1000
     )
+    extrusion_smoothing_factor: bpy.props.FloatProperty(
+        name="Smoothing Factor",
+        description="Smoothing Factor",
+        default=0.2,
+        min=0.0, max=1.0
+    )
+    extrusion_length_factor: bpy.props.FloatProperty(
+        name="Length Factor",
+        description="Extrusion Length Factor for Convex Vertices",
+        default=2.0,
+        min=0.0, max=10.0
+    )
+    extrusion_inhibition_factor: bpy.props.FloatProperty(
+        name="Inhibition Factor",
+        description="Smoothing Inhibition Factor for Concave Vertices",
+        default=10.0,
+        min=0.0, max=100.0
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -288,6 +306,12 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.prop(ug_props, "extrusion_smoothing_iterations", text="Smoothing Iterations")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_smoothing_factor", text="Smoothing Factor")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_length_factor", text="Length Factor")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_inhibition_factor", text="Inhibition Factor")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
