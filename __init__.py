@@ -148,6 +148,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1,
         min=1, max=10000000
     )
+    extrusion_smoothing_iterations: bpy.props.IntProperty(
+        name="Smoothing Iterations",
+        description="Number of Vertex Smoothing Iterations",
+        default=0,
+        min=0, max=1000
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -198,7 +204,7 @@ def save_handler(dummy):
     '''Updates string variables from UG data before saving Blend file'''
 
     ug_props = bpy.context.scene.ug_props
-    if len(ug.ugcells) == 0:
+    if len(ug.ugcells) == 0 or not ug.get_ug_object():
         return None
     l.debug("Executing pre_save handler")
     bpy.ops.unstructured_grids.update_all_from_blender()
@@ -279,6 +285,9 @@ class VIEW3D_PT_UG_GUI:
         row.label(text="Expression for Scaling Thickness:")
         row = layout.row()
         row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
+
+        row = layout.row()
+        row.prop(ug_props, "extrusion_smoothing_iterations", text="Smoothing Iterations")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
