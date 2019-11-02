@@ -90,36 +90,55 @@ def read_polymesh_files(self):
 
     # Compulsory files
     filenames = ['boundary', 'faces', 'neighbour', 'owner', 'points']
-    for f in filenames:
-        varname = "text_" + f
-        filepath = os.path.join(dirpath, f)
-        l.debug("Reading in as string: %s" % filepath)
-
-        if not (os.path.isfile(filepath)):
-            self.report({'ERROR'}, "Could not find %r" \
-                        % filepath)
-            return None
-
-        with open(filepath, 'r') as infile:
-            setattr(ug_props, varname, infile.read())
+    rval = read_in_files(True, dirpath, filenames)
+    if rval:
+        self.report({'ERROR'}, "Error: " + rval)
+        return None
 
     # Optional files
     filenames = ['cellZones', 'faceZones']
-    for f in filenames:
-        varname = "text_" + f
-        filepath = os.path.join(dirpath, f)
-        l.debug("Reading in as string: %s" % filepath)
-
-        if not (os.path.isfile(filepath)):
-            l.debug("Could not find %r" % filepath)
-            continue
-
-        with open(filepath, 'r') as infile:
-            setattr(ug_props, varname, infile.read())
+    rval = read_in_files(False, dirpath, filenames)
 
     polymesh_boundary_ingroup_fix()
     polymesh_to_ugdata(self)
     return None
+
+
+def read_in_files(is_required, dirpath, filenames):
+    '''Read in file contents of filenames (gzip compressed or uncompressed
+    ASCII files) in dirpath. Return error message if is_required is
+    True and file does not exist.
+    '''
+    import os
+    import gzip
+    ug_props = bpy.context.scene.ug_props
+
+    for f in filenames:
+        varname = "text_" + f
+
+        filepath = os.path.join(dirpath, f)
+        filepathgz = os.path.join(dirpath, f + ".gz")
+        if os.path.isfile(filepathgz) and os.path.isfile(filepath):
+            error = "Both compressed and uncompressed file exist for " \
+                    "%r" % filepath
+            l.debug(error)
+            return error
+
+        if os.path.isfile(filepathgz):
+            l.debug("Reading in as string: %s" % filepathgz)
+            with gzip.open(filepathgz, 'r') as infile:
+                # Assume UTF-8 decoding for converting bytes to string
+                setattr(ug_props, varname, infile.read().decode("utf-8"))
+        else:
+            l.debug("Reading in as string: %s" % filepath)
+            if not (os.path.isfile(filepath)):
+                error = "Could not find %r" % filepath
+                l.debug(error)
+                if is_required:
+                    return error
+            else:
+                with open(filepath, 'r') as infile:
+                    setattr(ug_props, varname, infile.read())
 
 
 def polymesh_boundary_ingroup_fix():

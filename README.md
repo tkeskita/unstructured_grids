@@ -63,9 +63,9 @@ level.
 
   - Scaling/moving/rotation of a selected part of the mesh
 
-  <p align="left"><img src="examples/ug_extrude_and_twist.png"></p>
+  - Extrude a mesh profile (on left), and twist the result (on right):
 
-  - Extrude a mesh profile (on left), and twist the result (on right)
+  <p align="left"><img src="examples/ug_extrude_and_twist.png"></p>
 
 
 ## Status
@@ -73,9 +73,9 @@ level.
 This add-on is in feature development stage.
 Currently implemented features include:
 
-- Import and Export of uncompressed ASCII PolyMesh files (boundary, faces,
-  neighbour, owner, points). PolyMesh Import and Export operators are located
-  in File menu under Import and Export.
+- Import and Export of ASCII PolyMesh files (boundary, faces,
+  neighbour, owner, points). PolyMesh Import and Export operators are
+  located in File menu under Import and Export.
 
 - Unstructured grid data is saved as text strings (UG Storage) inside Blend files.
 
@@ -103,7 +103,7 @@ Currently implemented features include:
   (Note: Experimental feature).
 
 - Import/Export of VTK Unstructured Grids (XML uncompressed ASCII
-  (.vtu) file format)
+  (.vtu) file format). Export creates VTK polyhedrons.
 
 - Cell integrity check and statistics routine (Check Selected Cells)
 
@@ -124,6 +124,12 @@ Currently implemented features include:
 
 
 ## Development Ideas for Future
+
+- Don't save Unstructured Grid object in blend file to save disk space
+  (mesh is anyways thrown away and regenerated from UG text
+  strings)
+
+- Add Gzip option to OpenFOAM PolyMesh export
 
 - Split Cells (Edge Division) (e.g. hexahedral cell is split to 8
   cells, tetrahedral cell is split into 4 cells)
