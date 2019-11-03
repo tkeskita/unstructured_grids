@@ -310,8 +310,10 @@ class VIEW3D_PT_UG_GUI:
         row.prop(ug_props, "extrusion_smoothing_factor", text="Smoothing Factor")
         row = layout.row()
         row.prop(ug_props, "extrusion_length_factor", text="Length Factor")
-        row = layout.row()
-        row.prop(ug_props, "extrusion_inhibition_factor", text="Inhibition Factor")
+
+        # TODO: Remove inhibition if it is not needed in final version
+        #row = layout.row()
+        #row.prop(ug_props, "extrusion_inhibition_factor", text="Inhibition Factor")
 
         row = layout.row()
         row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
