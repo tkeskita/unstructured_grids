@@ -65,6 +65,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         coeffs = [] # Extrusion length coefficients, can be updated per layer
         inhibitions = [] # Smoothing inhibition coefficies
         new_ugfaces = [] # List of new ugfaces created in extrusion
+
         import bmesh
         import time
         ob = ug.get_ug_object()
@@ -326,11 +327,13 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
         # Do nothing if initial direction and coeffs is to be used
         if len(vdir) > 0 and len(coeffs) > 0:
             if ug_props.extrusion_uses_fixed_initial_directions:
-                return vdir, coeffs, inhibitions
+                return vdir, coeffs, inhibitions, {}
 
         vdir = [] # new extrusion directions to be calculated
         coeffs = [] # new extrusion length coefficients to be calculated
         inhibitions = [] # coefficient for inhibiting smoothing of vertices
+        vert_neighbour_faces = {} # Map from vertex to it's neighbour faces
+
         for v in verts:
             norvecs = []
             faces = []
@@ -350,6 +353,8 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             # Extrusion direction
             vdir.append(get_vdir(norvecs))
 
+            vert_neighbour_faces[v] = faces
+
             # Length coefficient
             # TODO: Remove inhibition if it is not needed in final version
             coeff, inhibition = get_coeffs(v, faces)
@@ -358,7 +363,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             if fulldebug: l.debug("vert %d " % v.index \
                                   + "coeff %f" % coeffs[-1] \
                                   + "inhibition %f" % inhibitions[-1])
-        return vdir, coeffs, inhibitions
+        return vdir, coeffs, inhibitions, vert_neighbour_faces
 
 
     def cast_vertices(bm, faces, verts, vdir, coeffs, inhibitions):
@@ -379,7 +384,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
 
         # Calculate updated extrusion direction and length
         # coefficients for vertices based on current face normals
-        vdir, coeffs, inhibitions = \
+        vdir, coeffs, inhibitions, vert_neighbour_faces = \
             calculate_extrusion_dir_and_coeffs(verts, vdir, coeffs, inhibitions)
 
         # Cast new vertices
@@ -393,9 +398,9 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
         bm.verts.index_update()
 
         if fulldebug: l.debug("Cast %d vertices" % len(vdir))
-        return bm, vert_map, new_verts, vdir, coeffs, inhibitions
+        return bm, vert_map, new_verts, vdir, coeffs, inhibitions, vert_neighbour_faces
 
-    bm, vert_map, new_verts, vdir, coeffs, inhibitions = \
+    bm, vert_map, new_verts, vdir, coeffs, inhibitions, vert_neighbour_faces = \
         cast_vertices(bm, faces, verts, vdir, coeffs, inhibitions)
 
 
@@ -515,7 +520,7 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
     correct_face_normals(bm, faces, ugci0)
 
 
-    def smoothen_verts(bm, new_verts, orig_verts, vdir):
+    def smoothen_verts(bm, new_verts, orig_verts, vdir, vert_neighbour_faces):
         '''Smoothen boundary vertex locations. Smoothening is limited by a
         plane calculated from original vertices and vdir. Note: This
         does not work for sharp edges when face area sizes differ
@@ -635,17 +640,17 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             return False, None, None
 
         def limit_smoothing(co, v, vdir):
-            '''Limit smoothing by a plane calculated from vertex and vdir. If new
-            coordinates co are on wrong side of the plane, return new
-            coordinates projected to the plane.
+            '''Limit smoothened coordinates co by a plane whose normal is vdir
+            and plane location is a small distance from vertex v towards vdir.
+            If new coordinates co are on wrong side of the plane,
+            return new coordinates projected to the plane.
             '''
-
             ug_props = bpy.context.scene.ug_props
             cvec = ug_props.extrusion_thickness * vdir
 
             # Center coordinates of limitiation plane
-            limitation_factor = 0.5
-            center = v.co + limitation_factor * cvec
+            projection_fraction = 0.5
+            center = v.co + projection_fraction * cvec
 
             testvec = co - center
 
@@ -659,6 +664,11 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             newco = co - scale * vdir
             return newco
 
+        def limit_by_faces(co, v, faces):
+            '''Limit coordinate co by faces around vertex v'''
+            for f in faces:
+                co = limit_smoothing(co, v, f.normal)
+            return co
 
         # Only selected faces are processed
         faces = [f for f in bm.faces if f.select]
@@ -686,7 +696,9 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
             if fulldebug: l.debug("Propose move vertex %d " % v.index \
                                   + "from %s to %s" % (str(v.co), str(co)))
 
-            # Limit new coordinates by plane calculated from orig_verts and vdir
+            # Limit new coordinates by surrounding faces
+            co = limit_by_faces(co, oldv, vert_neighbour_faces[oldv])
+            # Limit new coordinates by plane calculated from extrusion vdir
             co = limit_smoothing(co, oldv, oldvdir)
             coords.append(co)
 
@@ -697,8 +709,9 @@ def extrude_cells(bm, initial_faces, vdir, coeffs, inhibitions, new_ugfaces):
 
     # Loop vertex smoothing
     ug_props = bpy.context.scene.ug_props
-    for i in range(ug_props.extrusion_smoothing_iterations):
-        smoothen_verts(bm, new_verts, verts, vdir)
+    if not ug_props.extrusion_uses_fixed_initial_directions:
+        for i in range(ug_props.extrusion_smoothing_iterations):
+            smoothen_verts(bm, new_verts, verts, vdir, vert_neighbour_faces)
 
 
     def add_base_face_to_cells(faces, ugci0):
