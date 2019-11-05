@@ -132,10 +132,17 @@ class UGProperties(bpy.types.PropertyGroup):
         precision=4,
         min=float_info.min, max=float_info.max
     )
-    extrusion_ignores_unselected_face_normals: bpy.props.BoolProperty(
-        name="Ignore Unselected Face Normals",
-        description="Ignore Unselected Neighbour Face Normals in Calculation of Extrusion Direction",
-        default=True,
+    # TODO: Remove?
+    #extrusion_ignores_unselected_face_normals: bpy.props.BoolProperty(
+    #    name="Ignore Unselected Face Normals",
+    #    description="Ignore Unselected Neighbour Face Normals in Calculation of Extrusion Direction",
+    #    default=True,
+    #)
+    extrusion_substeps: bpy.props.IntProperty(
+        name="Extrusion Substeps",
+        description="Number of Casting and Smoothing Substeps per Layer",
+        default=1,
+        min=1, max=100
     )
     extrusion_uses_fixed_initial_directions: bpy.props.BoolProperty(
         name="Use Fixed Extrusion Directions",
@@ -151,21 +158,22 @@ class UGProperties(bpy.types.PropertyGroup):
     extrusion_smoothing_iterations: bpy.props.IntProperty(
         name="Smoothing Iterations",
         description="Number of Vertex Smoothing Iterations",
-        default=0,
+        default=3,
         min=0, max=1000
     )
     extrusion_smoothing_factor: bpy.props.FloatProperty(
         name="Smoothing Factor",
         description="Smoothing Factor",
-        default=0.2,
+        default=0.5,
         min=0.0, max=1.0
     )
-    extrusion_length_factor: bpy.props.FloatProperty(
-        name="Length Factor",
-        description="Extrusion Length Factor for Convex Vertices",
-        default=2.0,
-        min=0.0, max=10.0
-    )
+    # TODO: Remove?
+    #extrusion_length_factor: bpy.props.FloatProperty(
+    #    name="Length Factor",
+    #    description="Extrusion Length Factor for Convex Vertices",
+    #    default=2.0,
+    #    min=0.0, max=10.0
+    #)
     extrusion_inhibition_factor: bpy.props.FloatProperty(
         name="Inhibition Factor",
         description="Smoothing Inhibition Factor for Concave Vertices",
@@ -291,8 +299,9 @@ class VIEW3D_PT_UG_GUI:
         col = layout.column()
         rowsub = col.row(align=True)
         rowsub.prop(ug_props, "extrusion_layers", text="Layers")
-        rowsub.prop(ug_props, "extrusion_ignores_unselected_face_normals",
-                    icon='NORMALS_FACE', text="")
+        # TODO: Remove
+        #rowsub.prop(ug_props, "extrusion_ignores_unselected_face_normals",
+        #            icon='NORMALS_FACE', text="")
         rowsub.prop(ug_props, "extrusion_uses_fixed_initial_directions",
                     icon='NORMALS_VERTEX_FACE', text="")
 
@@ -306,11 +315,14 @@ class VIEW3D_PT_UG_GUI:
 
         if not ug_props.extrusion_uses_fixed_initial_directions:
             row = layout.row()
+            row.prop(ug_props, "extrusion_substeps", text="Substeps")
+            row = layout.row()
             row.prop(ug_props, "extrusion_smoothing_iterations", text="Smoothing Iterations")
             row = layout.row()
             row.prop(ug_props, "extrusion_smoothing_factor", text="Smoothing Factor")
-            row = layout.row()
-            row.prop(ug_props, "extrusion_length_factor", text="Length Factor")
+            # TODO: Remove?
+            #row = layout.row()
+            #row.prop(ug_props, "extrusion_length_factor", text="Length Factor")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()
