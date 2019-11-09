@@ -62,6 +62,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         ug_props = bpy.context.scene.ug_props
         n = 0 # new cell count
         vdir = [] # Extrusion directions, can be updated per layer
+        prev_vlens = [] # Previous extrusion length for vertices
         new_ugfaces = [] # List of new ugfaces created in extrusion
         import bmesh
         import time
@@ -77,12 +78,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         for i in range(ug_props.extrusion_layers):
             t0 = time.clock()
             if i == 0:
-                bm, nf, vdir, new_ugfaces = \
-                    extrude_cells(bm, initial_faces, vdir, \
+                bm, nf, vdir, prev_vlens, new_ugfaces = \
+                    extrude_cells(bm, initial_faces, vdir, prev_vlens, \
                                   new_ugfaces, initial_face_areas)
             else:
-                bm, nf, vdir, new_ugfaces = \
-                    extrude_cells(bm, [], vdir, \
+                bm, nf, vdir, prev_vlens, new_ugfaces = \
+                    extrude_cells(bm, [], vdir, prev_vlens, \
                                   new_ugfaces, initial_face_areas)
                 t1 = time.clock()
                 l.debug("Extruding layer %d, " % i \
@@ -172,7 +173,8 @@ def initialize_extrusion():
     return True, initial_faces
 
 
-def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
+def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
+                  initial_face_areas):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -406,6 +408,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         vert_map = {} # Dictionary for mapping original face verts to new verts
         ug_props = bpy.context.scene.ug_props
         top_verts = []
+        vlens = [] # Extrusion lengths
 
         # Extrusion length
         extrude_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
@@ -413,20 +416,22 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         # Cast new vertices
         for i in range(len(base_verts)):
             newco = base_verts[i].co + extrude_len * vdir[i]
-            # newco = base_verts[i].co + extrude_len * vdir[i] * area_scales[i]
-            # newco = base_verts[i].co + extrude_len * vdir[i] * max(1.0, convexity_coeffs[i])
 
             v2 = bm.verts.new(newco)
             vert_map[base_verts[i]] = v2
             top_verts.append(v2)
+            vlens.append(extrude_len)
 
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 
         if fulldebug: l.debug("Cast %d vertices" % len(vdir))
-        return bm, top_verts, vert_map
+        return bm, top_verts, vert_map, vlens
 
-    bm, top_verts, vert_map = cast_vertices(bm, base_verts, vdir)
+    bm, top_verts, vert_map, vlens = cast_vertices(bm, base_verts, vdir)
+
+    if len(prev_vlens) == 0:
+        prev_vlens = vlens
 
 
     def create_mesh_faces(bm, edge2sideface_index, vert_map, base_faces, \
@@ -562,18 +567,56 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             areas.append(f.calc_area())
         return areas
 
-    def extend_verts(bm, top_verts, base_verts):
+    def calculate_mean_vertex_area_change(fi_areas, initial_face_areas, \
+                                          base_fis_of_vis):
+        '''Calculate mean relative change of areas of faces around each vertex'''
+        mean_changes = []
+        for vi in range(len(base_fis_of_vis)):
+            fis = base_fis_of_vis[vi]
+            mean_change = 0.0
+            for fi in fis:
+                mean_change += initial_face_areas[fi] / fi_areas[fi]
+
+            mean_change /= float(len(fis))
+            mean_changes.append(mean_change)
+        return mean_changes
+
+    def extend_verts(bm, top_verts, base_verts, fi_areas, initial_face_areas, \
+                     base_fis_of_vis, prev_vlens):
         '''Move top vertices outwards to extend cell in a substep'''
 
         ug_props = bpy.context.scene.ug_props
+        nsteps = float(ug_props.extrusion_substeps)
+        ext_len = ug_props.extrusion_thickness
+        corner_factor = ug_props.extrusion_corner_factor
+        area_factor = ug_props.extrusion_area_factor
+        growth_damping_factor = ug_props.extrusion_growth_damping_factor
 
-        # Extension length
-        ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+        # Calculate mean area change per vertex
+        area_coeffs = calculate_mean_vertex_area_change( \
+            fi_areas, initial_face_areas, base_fis_of_vis)
 
-        for tv, bv in zip(top_verts, base_verts):
+        for tv, bv, a, prev_len, ic in \
+            zip(top_verts, base_verts, area_coeffs, prev_vlens, is_corners):
+
             vdir = tv.co - bv.co
             vdir.normalize()
-            tv.co = tv.co + vdir * ext_len
+
+            # Extension length scaling
+            if a > 1.0:
+                # Area change suggests extension of step legth. Dampen
+                # area coefficient by damping factor to prevent
+                # zigzagging in concave extrusion fronts.
+                a2 = (a - 1.0) * growth_damping_factor + 1.0
+                step_len = ext_len * a2 / nsteps
+            else:
+                step_len = ext_len * a / nsteps
+
+            # Area scaling (non-corners and corners)
+            if not ic:
+                tv.co = tv.co + vdir * step_len * area_factor
+            else:
+                tv.co = tv.co + vdir * step_len * area_factor * corner_factor
 
 
     def smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, base_faces, neighbour_vis_of_vi, fis_of_neighbour_vis, fi_areas, boundary_vert_neighbours, base_fis_of_vis):
@@ -701,7 +744,9 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         # Carry out the rest of substeps (extend + smoothings)
         for j in range(ug_props.extrusion_substeps - 1):
-            extend_verts(bm, top_verts, base_verts)
+            fi_areas = calculate_face_areas(top_faces)
+            extend_verts(bm, top_verts, base_verts, fi_areas, \
+                         initial_face_areas, base_fis_of_vis, prev_vlens)
 
             for i in range(ug_props.extrusion_smoothing_iterations):
                 fi_areas = calculate_face_areas(top_faces)
@@ -750,7 +795,13 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
 
-    return bm, len(base_faces), vdir, new_ugfaces
+    # Update extrusion lengths for next round
+    prev_vlens=[]
+    for vold, v in zip(base_verts, top_verts):
+        vec = v.co - vold.co
+        prev_vlens.append(vec.length)
+
+    return bm, len(base_faces), vdir, prev_vlens, new_ugfaces
 
 
 # TODO: Remove obsolete help functions?

@@ -140,19 +140,20 @@ class UGProperties(bpy.types.PropertyGroup):
     #)
     extrusion_substeps: bpy.props.IntProperty(
         name="Extrusion Substeps",
-        description="Number of Casting and Smoothing Substeps per Layer",
-        default=1,
+        description="Number of Extension and Smoothing Substeps per Layer",
+        default=2,
         min=1, max=100
     )
     extrusion_uses_fixed_initial_directions: bpy.props.BoolProperty(
-        name="Use Fixed Extrusion Directions",
-        description="Use Initial Normal Directions for All Layers in Extrusion",
+        name="Use Fixed Extrusion Method",
+        description="Use Fixed Directions and Length for All Layers in Extrusion" \
+        + ". Disable to Switch to Hyperbolic Extrusion",
         default=True,
     )
     extrusion_layers: bpy.props.IntProperty(
         name="Extrusion Layers",
         description="Number of Layers to Extrude",
-        default=1,
+        default=10,
         min=1, max=10000000
     )
     extrusion_smoothing_iterations: bpy.props.IntProperty(
@@ -167,18 +168,29 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.5,
         min=0.0, max=1.0
     )
-    # TODO: Remove?
-    #extrusion_length_factor: bpy.props.FloatProperty(
-    #    name="Length Factor",
-    #    description="Extrusion Length Factor for Convex Vertices",
-    #    default=2.0,
-    #    min=0.0, max=10.0
-    #)
     extrusion_inhibition_factor: bpy.props.FloatProperty(
         name="Inhibition Factor",
         description="Smoothing Inhibition Factor for Concave Vertices",
         default=10.0,
         min=0.0, max=100.0
+    )
+    extrusion_corner_factor: bpy.props.FloatProperty(
+        name="Corner Factor",
+        description="Extrusion Corner Limitation Factor",
+        default=0.8,
+        min=0.0, max=1.0
+    )
+    extrusion_area_factor: bpy.props.FloatProperty(
+        name="Area Factor",
+        description="Extrusion Area Scale Factor",
+        default=0.8,
+        min=0.0, max=1.0
+    )
+    extrusion_growth_damping_factor: bpy.props.FloatProperty(
+        name="Growth Damping",
+        description="Extrusion Growth Damping Factor",
+        default=0.5,
+        min=0.0, max=1.0
     )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
@@ -320,17 +332,23 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_smoothing_iterations", text="Smoothing Iterations")
             row = layout.row()
             row.prop(ug_props, "extrusion_smoothing_factor", text="Smoothing Factor")
-            # TODO: Remove?
-            #row = layout.row()
-            #row.prop(ug_props, "extrusion_length_factor", text="Length Factor")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_area_factor", text="Area Factor")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_corner_factor", text="Corner Factor")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_growth_damping_factor", text="Growth Damping")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()
             #row.prop(ug_props, "extrusion_inhibition_factor", text="Inhibition Factor")
 
-        row = layout.row()
-        row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
-                     icon='EXPERIMENTAL')
+            row = layout.row()
+            row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
+                         icon='EXPERIMENTAL')
+        else:
+            row = layout.row()
+            row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
 
         row = layout.row()
         row.label(text="Debug Selected Items:")
