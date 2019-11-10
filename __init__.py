@@ -192,6 +192,24 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.5,
         min=0.0, max=1.0
     )
+    extrusion_convexity_min: bpy.props.FloatProperty(
+        name="Convexity Minimum",
+        description="Convexity Minimum Factor",
+        default=0.45,
+        min=0.0, max=1.0
+    )
+    extrusion_convexity_max: bpy.props.FloatProperty(
+        name="Convexity Maximum",
+        description="Convexity Maximum Factor",
+        default=0.8,
+        min=0.0, max=1.0
+    )
+    extrusion_convexity_clamp: bpy.props.FloatProperty(
+        name="Convexity Clamp",
+        description="Convexity Clamp Factor",
+        default=0.8,
+        min=0.0, max=1.0
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -338,6 +356,12 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_corner_factor", text="Corner Factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_growth_damping_factor", text="Growth Damping")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_convexity_min")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_convexity_max")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_convexity_clamp")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()

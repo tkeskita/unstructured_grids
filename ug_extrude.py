@@ -563,9 +563,20 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
     def calculate_max_convexities(bm, verts, faces):
         '''Calculate minimum convexity limitation factors for verts'''
 
+        ug_props = bpy.context.scene.ug_props
+        # minimum max_convexity to allow smoothing
+        a = ug_props.extrusion_convexity_min
+        # maximum max_convexity to clamp smoothing
+        b = ug_props.extrusion_convexity_max
+        # maximum clamp value
+        c = ug_props.extrusion_convexity_clamp
+
+        slope = c / (b - a)
+        root = -a * slope
+
         max_convexities = []
         for vi, v in enumerate(verts):
-            max_convexity = 1.0
+            max_convexity = 0.0
             if fulldebug: l.debug("Vert %d:" % v.index)
             for e in v.link_edges:
                 efaces = [f for f in e.link_faces if f in faces]
@@ -596,11 +607,6 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                     max_convexity = max(max_convexity, convexity)
 
             # Calculate limitation coefficient based on minimum convexity
-            a = 0.4 # minimum convexity to allow smoothing
-            b = 0.8 # maximum convexity to clamp smoothing
-            c = 0.5 # maximum clamp value
-            slope = c / (b - a)
-            root = -a * slope
             coeff = root + slope * max_convexity
             coeff = min(c, max(0.0, coeff))
             max_convexities.append(coeff)
