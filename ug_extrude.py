@@ -614,6 +614,25 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             if fulldebug: l.debug("  max_convexity_coeff %f" % coeff)
         return max_convexities
 
+    def propagate_max_convexities(verts, max_convexities, neighbour_vis_of_vi):
+        '''Propagate maximum convexity value from neighbouring vertices'''
+
+        max_vals = []
+        radius = 0.07 # allowed radius for propagation
+        for i, v in enumerate(verts):
+            nvals = get_items_from_list(max_convexities, neighbour_vis_of_vi[i])
+            nverts = get_items_from_list(verts, neighbour_vis_of_vi[i])
+            for nvi, nv in enumerate(nverts):
+                vec = nv.co - v.co
+                if vec.length < radius:
+                    scale = 1.0
+                else:
+                    scale = 0.0
+                nvals[nvi] *= scale
+            nvals.append(max_convexities[i]) # own value is possible, too
+            max_vals.append(max(nvals))
+        return max_vals
+
     def calculate_face_areas(faces):
         '''Calculate areas of faces'''
         areas = []
@@ -796,6 +815,8 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         ug_props.extrusion_smoothing_iterations > 0:
 
         convexities = calculate_max_convexities(bm, base_verts, base_faces)
+        #for i in range(3):
+        #    convexities = propagate_max_convexities(top_verts, convexities, neighbour_vis_of_vi)
 
         # First run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):
