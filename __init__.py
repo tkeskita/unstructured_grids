@@ -192,6 +192,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.5,
         min=0.0, max=1.0
     )
+    extrusion_convexity_scale_factor: bpy.props.FloatProperty(
+        name="Convexity Scale",
+        description="Extrusion Length Growth Scaling Factor for Convex Vertices",
+        default=5.0,
+        min=0.0, max=100.0
+    )
     extrusion_uses_angle_deviation: bpy.props.BoolProperty(
         name="Use Angle Deviation in Smoothing",
         description="Use Angle Deviation Limitation in Smoothing",
@@ -199,8 +205,9 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_deviation_angle_min: bpy.props.FloatProperty(
         name="Minimum cos(angle)",
-        description="Minimum Allowed Cosine of Angle",
-        default=0.95,
+        description="Minimum Allowed Cosine of Angle Between Smoothened " \
+        + "and Vertex Normal Directions",
+        default=0.8,
         min=0.0, max=1.0
     )
     extrusion_deviation_length_min: bpy.props.FloatProperty(
@@ -215,7 +222,7 @@ class UGProperties(bpy.types.PropertyGroup):
         default=5.0,
         min=0.0, max=100.0
     )
-    extrusion_uses_convexity: bpy.props.BoolProperty(
+    extrusion_uses_convexity_limitation: bpy.props.BoolProperty(
         name="Use Convexity Limitation in Smoothing",
         description="Use Convexity Limitation in Smoothing",
         default=False,
@@ -376,6 +383,8 @@ class VIEW3D_PT_UG_GUI:
         row.label(text="Expression for Scaling Thickness:")
         row = layout.row()
         row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_convexity_scale_factor")
 
         if not ug_props.extrusion_uses_fixed_initial_directions:
             row = layout.row()
@@ -402,8 +411,8 @@ class VIEW3D_PT_UG_GUI:
                 row.prop(ug_props, "extrusion_deviation_length_max")
 
             row = layout.row()
-            row.prop(ug_props, "extrusion_uses_convexity", text="Use Convexity Limitation")
-            if ug_props.extrusion_uses_convexity:
+            row.prop(ug_props, "extrusion_uses_convexity_limitation", text="Use Convexity Limitation")
+            if ug_props.extrusion_uses_convexity_limitation:
                 row = layout.row()
                 row.prop(ug_props, "extrusion_convexity_min")
                 row = layout.row()
