@@ -790,11 +790,11 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             oldv = base_verts[vi]
             old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
             # Limit by factor calculated from convexity
-            convexity_coeff = convexities[vi]
-            newco = v.co + (newco - v.co) * convexity_coeff
+            if ug_props.extrusion_uses_convexity:
+                convexity_coeff = convexities[vi]
+                newco = v.co + (newco - v.co) * convexity_coeff
             # Limit by plane calculated from extrusion vdir
-            extra_push_factor = 1.05
-            newco = limit_co_by_plane(newco, oldv, vdir[vi] * extra_push_factor)
+            newco = limit_co_by_plane(newco, oldv, vdir[vi])
             # Limit by surrounding faces
             newco = limit_by_faces(newco, oldv, old_faces)
             # Limit again by vdir plane
@@ -808,15 +808,19 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             v.co = c
 
 
-    # Main vertex extension + smoothing loop
+    # Main vertex extension + smoothing loops
 
     ug_props = bpy.context.scene.ug_props
     if not ug_props.extrusion_uses_fixed_initial_directions and \
         ug_props.extrusion_smoothing_iterations > 0:
 
-        convexities = calculate_max_convexities(bm, base_verts, base_faces)
-        #for i in range(3):
-        #    convexities = propagate_max_convexities(top_verts, convexities, neighbour_vis_of_vi)
+        convexities = []
+        if ug_props.extrusion_uses_convexity:
+            convexities = calculate_max_convexities(bm, base_verts, base_faces)
+            for i in range(ug_props.extrusion_convexity_propagations):
+                convexities = propagate_max_convexities(top_verts, \
+                                                        convexities, \
+                                                        neighbour_vis_of_vi)
 
         # First run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):

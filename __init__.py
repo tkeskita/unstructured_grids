@@ -164,7 +164,7 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_smoothing_factor: bpy.props.FloatProperty(
         name="Smoothing Factor",
-        description="Smoothing Factor",
+        description="Smoothing Limitation Factor",
         default=0.5,
         min=0.0, max=1.0
     )
@@ -182,15 +182,20 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_area_factor: bpy.props.FloatProperty(
         name="Area Factor",
-        description="Extrusion Area Scale Factor",
+        description="Scale Factor for Extrusion Length Based on Area Change",
         default=0.8,
         min=0.0, max=1.0
     )
     extrusion_growth_damping_factor: bpy.props.FloatProperty(
         name="Growth Damping",
-        description="Extrusion Growth Damping Factor",
+        description="Extrusion Length Growth Damping Factor",
         default=0.5,
         min=0.0, max=1.0
+    )
+    extrusion_uses_convexity: bpy.props.BoolProperty(
+        name="Use Convexity Limitation in Smoothing",
+        description="Use Convexity Limitation in Smoothing",
+        default=True,
     )
     extrusion_convexity_min: bpy.props.FloatProperty(
         name="Convexity Minimum",
@@ -209,6 +214,12 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Convexity Clamp Factor",
         default=0.8,
         min=0.0, max=1.0
+    )
+    extrusion_convexity_propagations: bpy.props.IntProperty(
+        name="Convexity Propagation Iterations",
+        description="Number of Iterations to Propagate Maximum Convexity",
+        default=2,
+        min=0, max=1000
     )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
@@ -357,11 +368,17 @@ class VIEW3D_PT_UG_GUI:
             row = layout.row()
             row.prop(ug_props, "extrusion_growth_damping_factor", text="Growth Damping")
             row = layout.row()
-            row.prop(ug_props, "extrusion_convexity_min")
+
+            row.prop(ug_props, "extrusion_uses_convexity", text="Use Convexity Limitation")
             row = layout.row()
-            row.prop(ug_props, "extrusion_convexity_max")
-            row = layout.row()
-            row.prop(ug_props, "extrusion_convexity_clamp")
+            if ug_props.extrusion_uses_convexity:
+                row.prop(ug_props, "extrusion_convexity_min")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_convexity_max")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_convexity_clamp")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_convexity_propagations")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()
