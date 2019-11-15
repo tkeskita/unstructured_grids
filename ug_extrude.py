@@ -678,7 +678,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             # Extension length scaling
             if a > 1.0:
                 # Area change suggests extension of step legth. Dampen
-                # area coefficient by damping factor to prevent
+                # area coefficient by damping factor to reduce
                 # zigzagging in concave extrusion fronts.
                 a2 = (a - 1.0) * growth_damping_factor + 1.0
                 step_len = ext_len * a2 / nsteps
@@ -731,6 +731,53 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             sqtot = sqlen1 + sqlen2
             co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
             return v.co + co
+
+        def limit_co_by_angle_deviation(co, v, vdir):
+            '''Limit (smoothened) coordinates co by the angle it is deviating from
+            vdir. Additionally limit the length
+            '''
+
+            from math import sqrt
+            ug_props = bpy.context.scene.ug_props
+
+            # Minimum allowed cosine of angle between vdir and u (vector from
+            # base vertex to co)
+            min_cos_alpha = ug_props.extrusion_deviation_angle_min
+            # Minimum length coefficient for u
+            min_len_coeff = ug_props.extrusion_deviation_length_min
+            # Maximum length coefficient for u
+            max_len_coeff = ug_props.extrusion_deviation_length_max
+
+            extrude_len = ug_props.extrusion_thickness \
+                / float(ug_props.extrusion_substeps + 1) # TODO: +1 enough, or need more?
+            # cvec = vdir * extrude_len
+
+            u = co - v.co # Vector from base vertex to new coordinates
+            q = (u @ vdir) * vdir # u component aligned with vdir
+            p = u - q # u component normal to vdir
+            m = u.normalized() # Normalized u
+            cos_alpha = m @ vdir
+            if cos_alpha < 0.0:
+                raise ValueError("cos_alpha negative: %f" % cos_alpha)
+
+            # Decrease angle by moving co on vdir normal plane
+            if cos_alpha < min_cos_alpha:
+                plen = sqrt(1.0/(min_cos_alpha * min_cos_alpha) - 1.0)
+                p.normalize()
+                p = plen * q.length * p
+                u = p + q
+
+            # Increase length if needed
+            if u.length < min_len_coeff * extrude_len:
+                u.normalize()
+                u = min_len_coeff * extrude_len * u
+
+            # Decrease length if needed
+            if u.length > max_len_coeff * extrude_len:
+                u.normalize()
+                u = max_len_coeff * extrude_len * u
+
+            return v.co + u
 
         def limit_co_by_plane(co, v, vdir):
             '''Limit (smoothened) coordinates co by a plane whose normal is vdir
@@ -789,12 +836,15 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             # Limitations
             oldv = base_verts[vi]
             old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
+            # Limit by plane calculated from extrusion vdir
+            newco = limit_co_by_plane(newco, oldv, vdir[vi])
+            # Limit by angle deviation
+            if ug_props.extrusion_uses_angle_deviation:
+                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi])
             # Limit by factor calculated from convexity
             if ug_props.extrusion_uses_convexity:
                 convexity_coeff = convexities[vi]
                 newco = v.co + (newco - v.co) * convexity_coeff
-            # Limit by plane calculated from extrusion vdir
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
             # Limit by surrounding faces
             newco = limit_by_faces(newco, oldv, old_faces)
             # Limit again by vdir plane

@@ -158,7 +158,7 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_smoothing_iterations: bpy.props.IntProperty(
         name="Smoothing Iterations",
-        description="Number of Vertex Smoothing Iterations",
+        description="Number of Vertex Smoothing Iterations Per Substep",
         default=3,
         min=0, max=1000
     )
@@ -176,7 +176,7 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_corner_factor: bpy.props.FloatProperty(
         name="Corner Factor",
-        description="Extrusion Corner Limitation Factor",
+        description="Extrusion Corner Length Scale Factor",
         default=0.8,
         min=0.0, max=1.0
     )
@@ -192,10 +192,33 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.5,
         min=0.0, max=1.0
     )
+    extrusion_uses_angle_deviation: bpy.props.BoolProperty(
+        name="Use Angle Deviation in Smoothing",
+        description="Use Angle Deviation Limitation in Smoothing",
+        default=True,
+    )
+    extrusion_deviation_angle_min: bpy.props.FloatProperty(
+        name="Minimum cos(angle)",
+        description="Minimum Allowed Cosine of Angle",
+        default=0.95,
+        min=0.0, max=1.0
+    )
+    extrusion_deviation_length_min: bpy.props.FloatProperty(
+        name="Minimum Length Factor",
+        description="Minimum Allowed Length Factor",
+        default=1.0,
+        min=0.0, max=100.0
+    )
+    extrusion_deviation_length_max: bpy.props.FloatProperty(
+        name="Maximum Length Factor",
+        description="Maximum Allowed Length Factor",
+        default=5.0,
+        min=0.0, max=100.0
+    )
     extrusion_uses_convexity: bpy.props.BoolProperty(
         name="Use Convexity Limitation in Smoothing",
         description="Use Convexity Limitation in Smoothing",
-        default=True,
+        default=False,
     )
     extrusion_convexity_min: bpy.props.FloatProperty(
         name="Convexity Minimum",
@@ -367,11 +390,21 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_corner_factor", text="Corner Factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_growth_damping_factor", text="Growth Damping")
-            row = layout.row()
 
-            row.prop(ug_props, "extrusion_uses_convexity", text="Use Convexity Limitation")
             row = layout.row()
+            row.prop(ug_props, "extrusion_uses_angle_deviation", text="Use Angle and Length Limitation")
+            if ug_props.extrusion_uses_angle_deviation:
+                row = layout.row()
+                row.prop(ug_props, "extrusion_deviation_angle_min")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_deviation_length_min")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_deviation_length_max")
+
+            row = layout.row()
+            row.prop(ug_props, "extrusion_uses_convexity", text="Use Convexity Limitation")
             if ug_props.extrusion_uses_convexity:
+                row = layout.row()
                 row.prop(ug_props, "extrusion_convexity_min")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_convexity_max")
