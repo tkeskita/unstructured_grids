@@ -272,24 +272,27 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             First return value is True if v is corner vertex.
             Second return value is True if v is boundary vertex.
             Third return value is list of two vertex indices (vis) pointing to
-            neighbour boundary vertices (only for boundary vertices)
+            neighbour boundary vertices (only for boundary vertices).
+            Fourth return value is list of all neighbour vertices
             '''
-            neighbour_vis = []
-            neighbour_faces = []
+            bn_vis = [] # boundary neighbour vis
+            bn_faces = [] # boundary neighbour faces
+            an_vis = [] # all neighbour vis
             for e in v.link_edges:
                 if e not in edges:
                     continue
+                an_vis.append(ibasevertmap[e.other_vert(v)])
                 link_faces = [x for x in e.link_faces if x in faces]
                 if len(link_faces) == 1:
-                    neighbour_vis.append(ibasevertmap[e.other_vert(v)])
-                    neighbour_faces.append(link_faces[0])
+                    bn_vis.append(ibasevertmap[e.other_vert(v)])
+                    bn_faces.append(link_faces[0])
 
-            if len(neighbour_vis) == 2:
-                if neighbour_faces[0] == neighbour_faces[1]:
-                    return True, True, [neighbour_vis[0], neighbour_vis[1]]
+            if len(bn_vis) == 2:
+                if bn_faces[0] == bn_faces[1]:
+                    return True, True, [bn_vis[0], bn_vis[1]], an_vis
                 else:
-                    return False, True, [neighbour_vis[0], neighbour_vis[1]]
-            return False, False, [None, None]
+                    return False, True, [bn_vis[0], bn_vis[1]], an_vis
+            return False, False, [None, None], an_vis
 
         # Turn lists into sets for fast search
         edgeset = set(edges)
@@ -297,23 +300,26 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
         is_corners = []
         is_boundaries = []
-        boundary_vert_neighbours = []
+        bn_vis = [] # boundary vertex neighbours
+        an_vis = [] # all vertex neighbours
         for v in verts:
-            is_corner, is_boundary, neigh_verts = \
+            is_corner, is_boundary, bn_verts, an_verts = \
                 classify_vert(v, ibasevertmap, edgeset, faceset)
             is_corners.append(is_corner)
             is_boundaries.append(is_boundary)
-            boundary_vert_neighbours.append(neigh_verts)
-        return is_corners, is_boundaries, boundary_vert_neighbours
+            bn_vis.append(bn_verts)
+            an_vis.append(an_verts)
+        return is_corners, is_boundaries, bn_vis, an_vis
 
     if not ug_props.extrusion_uses_fixed_initial_directions:
-        is_corners, is_boundaries, boundary_vert_neighbours = \
-            classify_verts(base_verts, base_edges, base_faces, base_fis_of_vis, ibasevertmap)
+        is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
+            classify_verts(base_verts, base_edges, base_faces, \
+                           base_fis_of_vis, ibasevertmap)
 
 
-    def get_vis_of_vi(verts, fis_of_vis, vis_of_fis):
+    def get_face_vis_of_vi(verts, fis_of_vis, vis_of_fis):
         '''First return value is list which contains, for each vertex, a list
-        of other vertex indices of neighbour vertices.
+        of vertex indices of neighbour faces excluding the base vertex.
         Second return value list of face indices for the same vertices.
         '''
         neighbour_vis_of_vi = []
@@ -334,7 +340,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
     if not ug_props.extrusion_uses_fixed_initial_directions:
         neighbour_vis_of_vi, fis_of_neighbour_vis = \
-            get_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
+            get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
 
 
     def create_UG_verts_faces_and_cells(base_verts, base_edges, base_faces, new_ugfaces):
@@ -710,7 +716,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
     def smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
                        base_faces, neighbour_vis_of_vi, fis_of_neighbour_vis, \
-                       fi_areas, boundary_vert_neighbours, base_fis_of_vis, \
+                       fi_areas, bnvis_of_vi, base_fis_of_vis, \
                        convexities):
         '''Smoothen top vertex locations'''
 
@@ -732,14 +738,14 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             if fulldebug: l.debug("tot_area %f" % tot_area)
             return v.co + co
 
-        def new_boundary_co_from_verts(v, vi, verts, boundary_vert_neighbours):
+        def new_boundary_co_from_verts(v, vi, verts, bnvis_of_vi):
             '''Calculate new vertex v location from neighbour boundary vertices
             v1 and v2
             '''
             ug_props = bpy.context.scene.ug_props
             smoothing_factor = ug_props.extrusion_smoothing_factor
-            v1 = verts[boundary_vert_neighbours[vi][0]]
-            v2 = verts[boundary_vert_neighbours[vi][1]]
+            v1 = verts[bnvis_of_vi[vi][0]]
+            v2 = verts[bnvis_of_vi[vi][1]]
             vec1 = (v1.co - v.co)
             vec2 = (v2.co - v.co)
             sqlen1 = vec1.length * vec1.length
@@ -839,7 +845,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
             # Smoothing of other boundary vertices
             if is_boundaries[vi]:
-                newco = new_boundary_co_from_verts(v, vi, top_verts, boundary_vert_neighbours)
+                newco = new_boundary_co_from_verts(v, vi, top_verts, bnvis_of_vi)
 
             # Smoothing of internal vertices
             else:
@@ -893,7 +899,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
                            base_faces, neighbour_vis_of_vi, \
                            fis_of_neighbour_vis, fi_areas, \
-                           boundary_vert_neighbours, base_fis_of_vis, \
+                           bnvis_of_vi, base_fis_of_vis, \
                            convexities)
 
         # Carry out the rest of substeps (extend + smoothings)
@@ -908,7 +914,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                 smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
                                base_faces, neighbour_vis_of_vi, \
                                fis_of_neighbour_vis, fi_areas, \
-                               boundary_vert_neighbours, base_fis_of_vis, \
+                               bnvis_of_vi, base_fis_of_vis, \
                                convexities)
 
 
