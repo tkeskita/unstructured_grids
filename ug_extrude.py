@@ -632,7 +632,9 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         '''Propagate maximum convexity value from neighbouring vertices'''
 
         max_vals = []
-        radius = 0.07 # allowed radius for propagation
+        ug_props = bpy.context.scene.ug_props
+        # allowed radius for propagation
+        radius = ug_props.extrusion_convexity_propagation_radius
         for i, v in enumerate(verts):
             nvals = get_items_from_list(max_convexities, neighbour_vis_of_vi[i])
             nverts = get_items_from_list(verts, neighbour_vis_of_vi[i])

@@ -251,6 +251,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default=2,
         min=0, max=1000
     )
+    extrusion_convexity_propagation_radius: bpy.props.FloatProperty(
+        name="Convexity Propagation Radius",
+        description="Convexity Propagation Radius",
+        default=0.1,
+        min=0.0, max=1000.0
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -421,6 +427,8 @@ class VIEW3D_PT_UG_GUI:
                 row.prop(ug_props, "extrusion_convexity_clamp")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_convexity_propagations")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_convexity_propagation_radius")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()
