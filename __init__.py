@@ -186,9 +186,9 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.8,
         min=0.0, max=1.0
     )
-    extrusion_growth_damping_factor: bpy.props.FloatProperty(
-        name="Growth Damping",
-        description="Extrusion Length Growth Damping Factor",
+    extrusion_growth_scale_factor: bpy.props.FloatProperty(
+        name="Growth Scaling",
+        description="Extrusion Length Growth Scaling Factor",
         default=0.5,
         min=0.0, max=1.0
     )
@@ -207,19 +207,19 @@ class UGProperties(bpy.types.PropertyGroup):
         name="Minimum cos(angle)",
         description="Minimum Allowed Cosine of Angle Between Smoothened " \
         + "and Vertex Normal Directions",
-        default=0.8,
+        default=0.7,
         min=0.0, max=1.0
     )
     extrusion_deviation_length_min: bpy.props.FloatProperty(
         name="Minimum Length Factor",
         description="Minimum Allowed Length Factor",
-        default=1.0,
+        default=0.5,
         min=0.0, max=100.0
     )
     extrusion_deviation_length_max: bpy.props.FloatProperty(
         name="Maximum Length Factor",
         description="Maximum Allowed Length Factor",
-        default=5.0,
+        default=20.0,
         min=0.0, max=100.0
     )
     extrusion_uses_convexity_limitation: bpy.props.BoolProperty(
@@ -404,7 +404,7 @@ class VIEW3D_PT_UG_GUI:
             row = layout.row()
             row.prop(ug_props, "extrusion_corner_factor", text="Corner Factor")
             row = layout.row()
-            row.prop(ug_props, "extrusion_growth_damping_factor", text="Growth Damping")
+            row.prop(ug_props, "extrusion_growth_scale_factor", text="Growth Scaling")
 
             row = layout.row()
             row.prop(ug_props, "extrusion_uses_angle_deviation", text="Use Angle and Length Limitation")

@@ -62,11 +62,11 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         ug_props = bpy.context.scene.ug_props
         n = 0 # new cell count
         vdir = [] # Extrusion directions, can be updated per layer
-        prev_vlens = [] # Previous extrusion length for vertices
         new_ugfaces = [] # List of new ugfaces created in extrusion
         import bmesh
         import time
         ob = ug.get_ug_object()
+        bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(ob.data)
 
         # Save initial face areas (used for scaling extrusion length)
@@ -78,12 +78,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         for i in range(ug_props.extrusion_layers):
             t0 = time.clock()
             if i == 0:
-                bm, nf, vdir, prev_vlens, new_ugfaces = \
-                    extrude_cells(bm, initial_faces, vdir, prev_vlens, \
+                bm, nf, vdir, new_ugfaces = \
+                    extrude_cells(bm, initial_faces, vdir, \
                                   new_ugfaces, initial_face_areas)
             else:
-                bm, nf, vdir, prev_vlens, new_ugfaces = \
-                    extrude_cells(bm, [], vdir, prev_vlens, \
+                bm, nf, vdir, new_ugfaces = \
+                    extrude_cells(bm, [], vdir, \
                                   new_ugfaces, initial_face_areas)
                 t1 = time.clock()
                 l.debug("Extruding layer %d, " % i \
@@ -173,8 +173,7 @@ def initialize_extrusion():
     return True, initial_faces
 
 
-def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
-                  initial_face_areas):
+def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -315,7 +314,8 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
             classify_verts(base_verts, base_edges, base_faces, \
                            base_fis_of_vis, ibasevertmap)
-
+    else:
+        is_corners = [False] * len(base_verts)
 
     def get_face_vis_of_vi(verts, fis_of_vis, vis_of_fis):
         '''First return value is list which contains, for each vertex, a list
@@ -380,6 +380,27 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         return resvec.normalized()
 
 
+    def get_face_vertex_cos_angle(v, f):
+        '''Calculate cos(angle) between the two edges connected to vertex v,
+        where both edges are part of face f
+        '''
+
+        # Find edges
+        edges = []
+        for e in v.link_edges:
+            if e not in f.edges:
+                continue
+            edges.append(e)
+
+        # Generate edge vectors and calculate cos(angle)
+        vec1 = edges[0].other_vert(v).co - v.co
+        vec1.normalize()
+        vec2 = edges[1].other_vert(v).co - v.co
+        vec2.normalize()
+        cos_angle = vec1 @ vec2
+        return min(1.0, max(-1.0, cos_angle))
+
+
     def get_items_from_list(alist, ilist):
         '''Return items in alist located at index locations in ilist'''
         res = []
@@ -390,9 +411,10 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
     def calculate_initial_extrusion_dir(vdir, verts, faces, fis_of_vis):
         '''Calculate initial extrusion direction vectors by averaging face
-        normals surrounding each vertex
+        normals surrounding each vertex, weighted by face vertex angle.
         '''
 
+        from mathutils import Vector
         ug_props = bpy.context.scene.ug_props
 
         # Do nothing if initial direction option is enabled
@@ -401,9 +423,22 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
 
         vdir = [] # new extrusion directions to be calculated
         for vi in range(len(verts)):
+            angle_factors = []
             neigh_faces = get_items_from_list(faces, fis_of_vis[vi])
+
+            # Calculate weight coefficients from face vertex angles
+            for f in neigh_faces:
+                # Invert cos angle and make range from 0 to 2:
+                angle_factor = (-1.0 * get_face_vertex_cos_angle(verts[vi], f)) + 1.0
+                angle_factors.append(angle_factor)
+
+            # Calculate final vdir from normals and weights
             norvecs = [f.normal for f in neigh_faces]
-            vdir.append(get_mean_dir(norvecs))
+            norvec = Vector((0, 0, 0))
+            for nv, factor in zip(norvecs, angle_factors):
+                norvec += factor * nv
+            norvec.normalize()
+            vdir.append(norvec)
 
         return vdir
 
@@ -455,44 +490,108 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
 
 
-    def cast_vertices(bm, base_verts, vdir, max_convexities):
-        '''Create new vertices from base vertices in argument bmesh, by
-        casting each vertex towards vdir
+    def calculate_face_areas(faces):
+        '''Calculate areas of faces'''
+        areas = []
+        for f in faces:
+            areas.append(f.calc_area())
+        return areas
+
+    fi_areas = calculate_face_areas(base_faces)
+
+
+    def calculate_mean_vertex_area_change(fi_areas, initial_face_areas, \
+                                          base_fis_of_vis):
+        '''Calculate mean relative change of areas of faces around each vertex'''
+        mean_changes = []
+        for vi in range(len(base_fis_of_vis)):
+            fis = base_fis_of_vis[vi]
+            mean_change = 0.0
+            for fi in fis:
+                mean_change += initial_face_areas[fi] / fi_areas[fi]
+
+            mean_change /= float(len(fis))
+            mean_changes.append(mean_change)
+        return mean_changes
+
+    area_coeffs = calculate_mean_vertex_area_change( \
+        fi_areas, initial_face_areas, base_fis_of_vis)
+
+
+    def calculate_extension_length(area_coeffs, is_corners, max_convexities):
+        '''Calculate length how much vertices are extended during casting or
+        extension steps
+        '''
+
+        ug_props = bpy.context.scene.ug_props
+        # Base extension length of a substep
+        ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+        corner_factor = ug_props.extrusion_corner_factor
+        area_factor = ug_props.extrusion_area_factor
+        growth_scale_factor = ug_props.extrusion_growth_scale_factor
+        convexity_factor = ug_props.extrusion_convexity_scale_factor
+
+        elens = [] # Extension lengths, to be calculated
+        for a, ic, mc in zip(area_coeffs, is_corners, max_convexities):
+            # Convexity scaling is done always
+            convexity_factor = 0.0
+            if mc > 0.5: # Scale only convex vertices
+                convexity_factor = (mc - 0.5) * 2.0 * convexity_factor
+            convexity_factor += 1.0
+            factor = convexity_factor
+
+            # Other scalings are done only for non-fixed extrusions
+            if not ug_props.extrusion_uses_fixed_initial_directions:
+                # Area change scaling
+                if a > 1.0:
+                    # Area change suggests extension of step legth. Scale
+                    # area coefficient by growth scaling factor < 1.0 to reduce
+                    # zigzagging in concave extrusion fronts.
+                    afac = (a - 1.0) * growth_scale_factor * area_factor + 1.0
+                else:
+                    afac = (a - 1.0) * area_factor + 1.0
+                factor *= afac
+
+                # Special scaling for corners
+                if ic:
+                    factor *= corner_factor
+
+            step_length = ext_len * factor
+            elens.append(step_length)
+
+        return elens
+
+    elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
+
+
+    def cast_vertices(bm, base_verts, vdir, elens, max_convexities):
+        '''Create new top vertices from base vertices in argument bmesh, by
+        casting each vertex towards vdir (length elen)
         '''
 
         vert_map = {} # Dictionary for mapping original face verts to new verts
         ug_props = bpy.context.scene.ug_props
         top_verts = []
-        vlens = [] # Extrusion lengths
 
         # Extrusion length
-        extrude_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
         convexity_factor = ug_props.extrusion_convexity_scale_factor
 
         # Cast new vertices
         for i in range(len(base_verts)):
-            factor = 0.0
-            if max_convexities[i] > 0.5: # Scale only convex vertices
-                factor = (max_convexities[i] - 0.5) * 2.0 * convexity_factor
-            if fulldebug:
-                l.debug("convexity %f, factor %f" % (max_convexities[i], factor))
-            newco = base_verts[i].co + extrude_len * vdir[i] * (factor + 1.0)
-
+            elen = elens[i]
+            newco = base_verts[i].co + elen * vdir[i]
             v2 = bm.verts.new(newco)
             vert_map[base_verts[i]] = v2
             top_verts.append(v2)
-            vlens.append(extrude_len)
 
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 
         if fulldebug: l.debug("Cast %d vertices" % len(vdir))
-        return bm, top_verts, vert_map, vlens
+        return bm, top_verts, vert_map
 
-    bm, top_verts, vert_map, vlens = cast_vertices(bm, base_verts, vdir, \
-                                                   max_convexities)
-    if len(prev_vlens) == 0:
-        prev_vlens = vlens
+    bm, top_verts, vert_map = cast_vertices(\
+        bm, base_verts, vdir, elens, max_convexities)
 
 
     def create_mesh_faces(bm, edge2sideface_index, vert_map, base_faces, \
@@ -660,63 +759,13 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             max_vals.append(max(nvals))
         return max_vals
 
-    def calculate_face_areas(faces):
-        '''Calculate areas of faces'''
-        areas = []
-        for f in faces:
-            areas.append(f.calc_area())
-        return areas
+    def extend_verts(top_verts, base_verts, elens):
+        '''Move top vertices outwards to elongate cell in a substep'''
 
-    def calculate_mean_vertex_area_change(fi_areas, initial_face_areas, \
-                                          base_fis_of_vis):
-        '''Calculate mean relative change of areas of faces around each vertex'''
-        mean_changes = []
-        for vi in range(len(base_fis_of_vis)):
-            fis = base_fis_of_vis[vi]
-            mean_change = 0.0
-            for fi in fis:
-                mean_change += initial_face_areas[fi] / fi_areas[fi]
-
-            mean_change /= float(len(fis))
-            mean_changes.append(mean_change)
-        return mean_changes
-
-    def extend_verts(bm, top_verts, base_verts, fi_areas, initial_face_areas, \
-                     base_fis_of_vis, prev_vlens, max_convexities):
-        '''Move top vertices outwards to extend cell in a substep'''
-
-        ug_props = bpy.context.scene.ug_props
-        nsteps = float(ug_props.extrusion_substeps)
-        ext_len = ug_props.extrusion_thickness
-        corner_factor = ug_props.extrusion_corner_factor
-        area_factor = ug_props.extrusion_area_factor
-        growth_damping_factor = ug_props.extrusion_growth_damping_factor
-
-        # Calculate mean area change per vertex
-        area_coeffs = calculate_mean_vertex_area_change( \
-            fi_areas, initial_face_areas, base_fis_of_vis)
-
-        for tv, bv, a, prev_len, ic in \
-            zip(top_verts, base_verts, area_coeffs, prev_vlens, is_corners):
-
+        for tv, bv, elen in zip(top_verts, base_verts, elens):
             vdir = tv.co - bv.co
             vdir.normalize()
-
-            # Extension length scaling
-            if a > 1.0:
-                # Area change suggests extension of step legth. Dampen
-                # area coefficient by damping factor to reduce
-                # zigzagging in concave extrusion fronts.
-                a2 = (a - 1.0) * growth_damping_factor + 1.0
-                step_len = ext_len * a2 / nsteps
-            else:
-                step_len = ext_len * a / nsteps
-
-            # Area scaling (non-corners and corners)
-            if not ic:
-                tv.co = tv.co + vdir * step_len * area_factor
-            else:
-                tv.co = tv.co + vdir * step_len * area_factor * corner_factor
+            tv.co = tv.co + vdir * elen
 
 
     def smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
@@ -783,7 +832,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             ug_props = bpy.context.scene.ug_props
 
             # Minimum allowed cosine of angle between vdir and u (vector from
-            # base vertex to co)
+            # minimum projected vertex to co)
             min_cos_alpha = ug_props.extrusion_deviation_angle_min
             # Minimum length coefficient for u
             min_len_coeff = ug_props.extrusion_deviation_length_min
@@ -794,13 +843,19 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                 / float(ug_props.extrusion_substeps + 1) # TODO: +1 enough, or need more?
             # cvec = vdir * extrude_len
 
-            u = co - v.co # Vector from base vertex to new coordinates
-            q = (u @ vdir) * vdir # u component aligned with vdir
-            p = u - q # u component normal to vdir
+            b_co = v.co + min_len_coeff * extrude_len * vdir # minimum projected vertex
+            u = co - b_co # Vector from minimum projected vertex to new coordinates
             m = u.normalized() # Normalized u
             cos_alpha = m @ vdir
-            if cos_alpha < 0.0:
-                raise ValueError("cos_alpha negative: %f" % cos_alpha)
+
+            # If co is below minimum projected vertex normal plane,
+            # return minimum projected vertex coordinates
+            if cos_alpha <= 0.0:
+                return b_co
+
+            # Otherwise, project u to minimum projected vertex vdir normal plane
+            q = (u @ vdir) * vdir # u component aligned with vdir
+            p = u - q # u component normal to vdir
 
             # Decrease angle by moving co on vdir normal plane
             if cos_alpha < min_cos_alpha:
@@ -809,17 +864,13 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                 p = plen * q.length * p
                 u = p + q
 
-            # Increase length if needed
-            if u.length < min_len_coeff * extrude_len:
+            # Decrease length (from base vertex v) if needed
+            w = co - v.co
+            if w.length > max_len_coeff * extrude_len:
                 u.normalize()
-                u = min_len_coeff * extrude_len * u
+                u = (max_len_coeff - min_len_coeff) * extrude_len * u
 
-            # Decrease length if needed
-            if u.length > max_len_coeff * extrude_len:
-                u.normalize()
-                u = max_len_coeff * extrude_len * u
-
-            return v.co + u
+            return b_co + u
 
         def limit_co_by_plane(co, v, vdir):
             '''Limit (smoothened) coordinates co by a plane whose normal is vdir
@@ -878,11 +929,11 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
             # Limitations
             oldv = base_verts[vi]
             old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
-            # Limit by plane calculated from extrusion vdir
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
             # Limit by angle deviation
             if ug_props.extrusion_uses_angle_deviation:
                 newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi])
+            # Limit by plane calculated from extrusion vdir
+            newco = limit_co_by_plane(newco, oldv, vdir[vi])
             # Limit by factor calculated from convexity
             if ug_props.extrusion_uses_convexity_limitation:
                 convexity_coeff = convexity_limitation_function(max_convexities[vi])
@@ -906,6 +957,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
     if not ug_props.extrusion_uses_fixed_initial_directions and \
         ug_props.extrusion_smoothing_iterations > 0:
 
+        # First carry out convexity limitation
         if ug_props.extrusion_uses_convexity_limitation:
             max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
             for i in range(ug_props.extrusion_convexity_propagations):
@@ -913,7 +965,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                                                             max_convexities, \
                                                             neighbour_vis_of_vi)
 
-        # First run smoothing rounds for first substep
+        # Run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):
             fi_areas = calculate_face_areas(top_faces)
             smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
@@ -925,9 +977,10 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         # Carry out the rest of substeps (extend + smoothings)
         for j in range(ug_props.extrusion_substeps - 1):
             fi_areas = calculate_face_areas(top_faces)
-            extend_verts(bm, top_verts, base_verts, fi_areas, \
-                         initial_face_areas, base_fis_of_vis, \
-                         prev_vlens, max_convexities)
+            area_coeffs = calculate_mean_vertex_area_change( \
+                fi_areas, initial_face_areas, base_fis_of_vis)
+            elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
+            extend_verts(top_verts, base_verts, elens)
 
             for i in range(ug_props.extrusion_smoothing_iterations):
                 fi_areas = calculate_face_areas(top_faces)
@@ -936,7 +989,6 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
                                fils_of_neighbour_vis, fi_areas, \
                                bnvis_of_vi, base_fis_of_vis, \
                                max_convexities)
-
 
 
     def add_base_face_to_cells(faces, ugci0):
@@ -977,13 +1029,7 @@ def extrude_cells(bm, initial_faces, vdir, prev_vlens, new_ugfaces, \
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
 
-    # Update extrusion lengths for next round
-    prev_vlens=[]
-    for vold, v in zip(base_verts, top_verts):
-        vec = v.co - vold.co
-        prev_vlens.append(vec.length)
-
-    return bm, len(base_faces), vdir, prev_vlens, new_ugfaces
+    return bm, len(base_faces), vdir, new_ugfaces
 
 
 # TODO: Remove obsolete help functions?
