@@ -533,12 +533,12 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         elens = [] # Extension lengths, to be calculated
         for a, ic, mc in zip(area_coeffs, is_corners, max_convexities):
+            factor = 1.0 # Cumulative length factor
+
             # Convexity scaling is done always
-            convexity_factor = 0.0
             if mc > 0.5: # Scale only convex vertices
-                convexity_factor = (mc - 0.5) * 2.0 * convexity_factor
-            convexity_factor += 1.0
-            factor = convexity_factor
+                convexity_factor = (mc - 0.5) * 2.0 * convexity_factor + 1.0
+                factor *= convexity_factor
 
             # Other scalings are done only for non-fixed extrusions
             if not ug_props.extrusion_uses_fixed_initial_directions:
@@ -920,7 +920,8 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Smoothing of internal vertices
             else:
-                newco = new_internal_co_from_vert(v, vi, top_verts, neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas)
+                newco = new_internal_co_from_vert(v, vi, top_verts, \
+                    neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas)
 
             if fulldebug:
                 l.debug("Propose move vertex %d " % v.index \
