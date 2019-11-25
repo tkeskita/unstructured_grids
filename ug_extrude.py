@@ -563,7 +563,6 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
     elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
 
-
     def cast_vertices(bm, base_verts, vdir, elens, max_convexities):
         '''Create new top vertices from base vertices in argument bmesh, by
         casting each vertex towards vdir (length elen)
@@ -728,14 +727,16 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         a = ug_props.extrusion_convexity_min
         # maximum max_convexity to clamp smoothing
         b = ug_props.extrusion_convexity_max
+        # minimum clamp value
+        c = ug_props.extrusion_convexity_clamp_min
         # maximum clamp value
-        c = ug_props.extrusion_convexity_clamp
+        d = ug_props.extrusion_convexity_clamp_max
 
         # Calculate limitation coefficient based on minimum convexity
-        slope = c / (b - a)
+        slope = (d - c) / (b - a)
         root = -a * slope
         coeff = root + slope * val
-        coeff = min(c, max(0.0, coeff))
+        coeff = min(d, max(c, coeff))
         return coeff
 
     def propagate_max_convexities(verts, max_convexities, neighbour_vis_of_vi):
@@ -771,7 +772,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
     def smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
                        base_faces, neighbour_vis_of_vi, fils_of_neighbour_vis, \
                        fi_areas, bnvis_of_vi, base_fis_of_vis, \
-                       max_convexities):
+                       max_convexities, anvis_of_vi):
         '''Smoothen top vertex locations'''
 
         def areas_from_fils(fi_areas, fils_of_vi):
@@ -789,7 +790,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 areas.append(area)
             return areas
 
-        def new_internal_co_from_vert(v, vi, verts, neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas):
+        def new_internal_co_from_vert_area_weighted(v, vi, verts, neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas):
             '''Calculate new location for argument vertex v from verts and weights'''
             from mathutils import Vector
             ug_props = bpy.context.scene.ug_props
@@ -807,6 +808,24 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             if fulldebug: l.debug("tot_area %f" % tot_area)
             return v.co + co
 
+        def new_internal_co_from_vert_neighbours(v, vi, verts, anvis_of_vi):
+            '''Calculate new location for argument vertex v from vertex neighbour
+            vertices average location
+            '''
+            from mathutils import Vector
+            ug_props = bpy.context.scene.ug_props
+            smoothing_factor = ug_props.extrusion_smoothing_factor
+            neighbour_verts = [verts[i] for i in anvis_of_vi[vi]]
+
+            co = Vector((0, 0, 0))
+            for nv in neighbour_verts:
+                co += (nv.co - v.co)
+            co *= smoothing_factor / float(len(neighbour_verts))
+
+            if fulldebug: l.debug("co %s %f" % (str(co), co.length))
+            return v.co + co
+
+
         def new_boundary_co_from_verts(v, vi, verts, bnvis_of_vi):
             '''Calculate new vertex v location from neighbour boundary vertices
             v1 and v2
@@ -823,7 +842,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
             return v.co + co
 
-        def limit_co_by_angle_deviation(co, v, vdir):
+        def limit_co_by_angle_deviation(co, v, vdir, convexity_coeff):
             '''Limit (smoothened) coordinates co by the angle it is deviating from
             vdir. Additionally limit the length
             '''
@@ -866,7 +885,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Decrease length (from base vertex v) if needed
             w = co - v.co
-            if w.length > max_len_coeff * extrude_len:
+            if w.length > max_len_coeff * convexity_coeff * extrude_len:
                 u.normalize()
                 u = (max_len_coeff - min_len_coeff) * extrude_len * u
 
@@ -920,8 +939,13 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Smoothing of internal vertices
             else:
-                newco = new_internal_co_from_vert(v, vi, top_verts, \
+                # Area weighted version
+                newco = new_internal_co_from_vert_area_weighted(v, vi, top_verts, \
                     neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas)
+
+                # Vertex neighbour version
+                #newco = new_internal_co_from_vert_neighbours(v, vi, top_verts, \
+                #    anvis_of_vi)
 
             if fulldebug:
                 l.debug("Propose move vertex %d " % v.index \
@@ -930,19 +954,26 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             # Limitations
             oldv = base_verts[vi]
             old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
-            # Limit by angle deviation
-            if ug_props.extrusion_uses_angle_deviation:
-                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi])
-            # Limit by plane calculated from extrusion vdir
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
-            # Limit by factor calculated from convexity
+
+            # Calculate convexity coefficient for angle deviation cone max size
             if ug_props.extrusion_uses_convexity_limitation:
                 convexity_coeff = convexity_limitation_function(max_convexities[vi])
-                newco = v.co + (newco - v.co) * convexity_coeff
+            else:
+                convexity_coeff = 1.0
+
+            # Limit by angle deviation
+            if ug_props.extrusion_uses_angle_deviation:
+                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi], convexity_coeff)
+            # Limit by plane calculated from extrusion vdir
+            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
+            # Limit by factor calculated from convexity
+            #if ug_props.extrusion_uses_convexity_limitation:
+            #    convexity_coeff = convexity_limitation_function(max_convexities[vi])
+            #    newco = v.co + (newco - v.co) * convexity_coeff
             # Limit by surrounding faces
-            newco = limit_by_faces(newco, oldv, old_faces)
+            #newco = limit_by_faces(newco, oldv, old_faces)
             # Limit again by vdir plane
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
+            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
 
             new_coords.append(newco)
 
@@ -959,12 +990,12 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         ug_props.extrusion_smoothing_iterations > 0:
 
         # First carry out convexity limitation
-        if ug_props.extrusion_uses_convexity_limitation:
-            max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
-            for i in range(ug_props.extrusion_convexity_propagations):
-                max_convexities = propagate_max_convexities(top_verts, \
-                                                            max_convexities, \
-                                                            neighbour_vis_of_vi)
+        #if ug_props.extrusion_uses_convexity_limitation:
+        #    max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
+        #    for i in range(ug_props.extrusion_convexity_propagations):
+        #        max_convexities = propagate_max_convexities(top_verts, \
+        #                                                    max_convexities, \
+        #                                                    neighbour_vis_of_vi)
 
         # Run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):
@@ -973,7 +1004,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                            base_faces, neighbour_vis_of_vi, \
                            fils_of_neighbour_vis, fi_areas, \
                            bnvis_of_vi, base_fis_of_vis, \
-                           max_convexities)
+                           max_convexities, anvis_of_vi)
 
         # Carry out the rest of substeps (extend + smoothings)
         for j in range(ug_props.extrusion_substeps - 1):
@@ -989,7 +1020,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                                base_faces, neighbour_vis_of_vi, \
                                fils_of_neighbour_vis, fi_areas, \
                                bnvis_of_vi, base_fis_of_vis, \
-                               max_convexities)
+                               max_convexities, anvis_of_vi)
 
 
     def add_base_face_to_cells(faces, ugci0):

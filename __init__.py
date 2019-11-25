@@ -239,11 +239,17 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.8,
         min=0.0, max=1.0
     )
-    extrusion_convexity_clamp: bpy.props.FloatProperty(
-        name="Convexity Clamp",
-        description="Convexity Clamp Factor",
-        default=0.8,
-        min=0.0, max=1.0
+    extrusion_convexity_clamp_min: bpy.props.FloatProperty(
+        name="Convexity Clamp Minimum",
+        description="Convexity Clamp Minimum Value",
+        default=1.0,
+        min=0.0, max=100.0
+    )
+    extrusion_convexity_clamp_max: bpy.props.FloatProperty(
+        name="Convexity Clamp Maximum",
+        description="Convexity Clamp Maximum Value",
+        default=2.0,
+        min=0.0, max=100.0
     )
     extrusion_convexity_propagations: bpy.props.IntProperty(
         name="Convexity Propagation Iterations",
@@ -424,11 +430,9 @@ class VIEW3D_PT_UG_GUI:
                 row = layout.row()
                 row.prop(ug_props, "extrusion_convexity_max")
                 row = layout.row()
-                row.prop(ug_props, "extrusion_convexity_clamp")
+                row.prop(ug_props, "extrusion_convexity_clamp_min")
                 row = layout.row()
-                row.prop(ug_props, "extrusion_convexity_propagations")
-                row = layout.row()
-                row.prop(ug_props, "extrusion_convexity_propagation_radius")
+                row.prop(ug_props, "extrusion_convexity_clamp_max")
 
             # TODO: Remove inhibition if it is not needed in final version
             #row = layout.row()
