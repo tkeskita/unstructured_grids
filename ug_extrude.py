@@ -728,14 +728,16 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         a = ug_props.extrusion_convexity_min
         # maximum max_convexity to clamp smoothing
         b = ug_props.extrusion_convexity_max
+        # minimum clamp value
+        c = ug_props.extrusion_convexity_clamp_min
         # maximum clamp value
-        c = ug_props.extrusion_convexity_clamp
+        d = ug_props.extrusion_convexity_clamp_max
 
         # Calculate limitation coefficient based on minimum convexity
-        slope = c / (b - a)
+        slope = (d - c) / (b - a)
         root = -a * slope
         coeff = root + slope * val
-        coeff = min(c, max(0.0, coeff))
+        coeff = min(d, max(c, coeff))
         return coeff
 
     def propagate_max_convexities(verts, max_convexities, neighbour_vis_of_vi):
@@ -807,6 +809,59 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             if fulldebug: l.debug("tot_area %f" % tot_area)
             return v.co + co
 
+        def get_bm_from_vertex_surrounding_faces(oldv, oldfaces):
+            '''Generate bmesh from faces surrounding center vertex olv with oldv
+            as first vertex
+            '''
+            bm = bmesh.new()
+            vertmap = {} # map from old to new vertices
+
+            # Initialize with center vertex
+            v0 = bm.verts.new(oldv.co)
+            vertmap[oldv] = v0
+            oldverts = [oldv]
+
+            # Create vertices and faces
+            for oldf in oldfaces:
+                faceverts = []
+                for oldv in oldf.verts:
+                    if oldv not in oldverts:
+                        oldverts.append(oldv)
+                        v = bm.verts.new(oldv.co)
+                        vertmap[oldv] = v
+                    faceverts.append(vertmap[oldv])
+                f = bm.faces.new(faceverts)
+                #f.normal_update()
+
+            #bm.faces.ensure_lookup_table()
+            #bm.faces.index_update()
+            return bm, v0
+
+        def new_internal_co_by_laplacian_smoothing(v, vi, top_faces, fis_of_vis):
+            '''Calculate new location for argument vertex v by Laplacian
+            smoothing
+            '''
+            from mathutils import Vector
+
+            faces = [top_faces[x] for x in fis_of_vis[vi]]
+            bm, v0 = get_bm_from_vertex_surrounding_faces(v, faces)
+
+            # Bug in Blender: Have to select faces for smooth_laplacian_vert()
+            for f in bm.faces:
+                f.select_set(True)
+
+            # Smoothen vertex v
+            ug_props = bpy.context.scene.ug_props
+            lambda_factor = ug_props.extrusion_laplacian_lambda_factor
+            bmesh.ops.smooth_laplacian_vert(bm, verts=bm.verts, \
+                lambda_factor=lambda_factor, lambda_border=0, use_x=True, \
+                use_y=True, use_z=True, preserve_volume=False)
+
+            l.debug("from %s to %s" % (str(v.co), str(v0.co)))
+            # TODO: Is full strength smoothing OK, or need to relax?
+            return Vector(v0.co)
+
+
         def new_boundary_co_from_verts(v, vi, verts, bnvis_of_vi):
             '''Calculate new vertex v location from neighbour boundary vertices
             v1 and v2
@@ -823,7 +878,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
             return v.co + co
 
-        def limit_co_by_angle_deviation(co, v, vdir):
+        def limit_co_by_angle_deviation(co, v, vdir, convexity_coeff):
             '''Limit (smoothened) coordinates co by the angle it is deviating from
             vdir. Additionally limit the length
             '''
@@ -866,7 +921,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Decrease length (from base vertex v) if needed
             w = co - v.co
-            if w.length > max_len_coeff * extrude_len:
+            if w.length > max_len_coeff * convexity_coeff * extrude_len:
                 u.normalize()
                 u = (max_len_coeff - min_len_coeff) * extrude_len * u
 
@@ -918,10 +973,14 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             if is_boundaries[vi]:
                 newco = new_boundary_co_from_verts(v, vi, top_verts, bnvis_of_vi)
 
-            # Smoothing of internal vertices
+            # Laplacian smoothing of internal vertices
             else:
-                newco = new_internal_co_from_vert(v, vi, top_verts, \
-                    neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas)
+                newco = new_internal_co_by_laplacian_smoothing(v, vi, top_faces, base_fis_of_vis)
+
+            # Smoothing of internal vertices
+            #else:
+            #    newco = new_internal_co_from_vert(v, vi, top_verts, \
+            #        neighbour_vis_of_vi, fils_of_neighbour_vis, fi_areas)
 
             if fulldebug:
                 l.debug("Propose move vertex %d " % v.index \
@@ -930,19 +989,25 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             # Limitations
             oldv = base_verts[vi]
             old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
-            # Limit by angle deviation
-            if ug_props.extrusion_uses_angle_deviation:
-                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi])
-            # Limit by plane calculated from extrusion vdir
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
-            # Limit by factor calculated from convexity
+
+            # Calculate convexity coefficient for angle deviation cone max size
             if ug_props.extrusion_uses_convexity_limitation:
                 convexity_coeff = convexity_limitation_function(max_convexities[vi])
-                newco = v.co + (newco - v.co) * convexity_coeff
+            else:
+                convexity_coeff = 1.0
+            # Limit by angle deviation
+            if ug_props.extrusion_uses_angle_deviation:
+                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi], convexity_coeff)
+            # Limit by plane calculated from extrusion vdir
+            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
+            # OLD: Limit by factor calculated from convexity
+            #if ug_props.extrusion_uses_convexity_limitation:
+            #    convexity_coeff = convexity_limitation_function(max_convexities[vi])
+            #    newco = v.co + (newco - v.co) * convexity_coeff
             # Limit by surrounding faces
-            newco = limit_by_faces(newco, oldv, old_faces)
+            #newco = limit_by_faces(newco, oldv, old_faces)
             # Limit again by vdir plane
-            newco = limit_co_by_plane(newco, oldv, vdir[vi])
+            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
 
             new_coords.append(newco)
 
@@ -950,6 +1015,46 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         # have been calculated
         for v, c in zip(top_verts, new_coords):
             v.co = c
+
+
+    def laplacian_smoothen_verts(bm, top_verts, top_faces):
+        '''Carry out Laplacian smoothing of top vertices as implemented in
+        Blender's bmesh.ops.smooth_laplacian_vert()
+        '''
+        # Note: This method smoothens all internal vertices at
+        # same time, which causes bad smoothing directions to be
+        # generated in some cases -> not good -> disabled.
+
+        # Gotta make new bmesh of only top faces, cause smooth_laplacian_vert
+        # naturally can't handle cell side faces
+        bm2 = bmesh.new()
+        vertmap = {}
+        verts2 = []
+        for vi, v in enumerate(top_verts):
+            v2 = bm2.verts.new(v.co)
+            vertmap[v] = vi
+            verts2.append(v2)
+        bm2.verts.ensure_lookup_table()
+        bm2.verts.index_update()
+
+        for f in top_faces:
+            faceverts2 = [bm2.verts[vertmap[x]] for x in f.verts]
+            f2 = bm2.faces.new(faceverts2)
+            # Bug in Blender: Have to select faces for smooth_laplacian_vert()?!
+            f2.select_set(True)
+        bm2.faces.ensure_lookup_table()
+        bm2.faces.index_update()
+
+        ug_props = bpy.context.scene.ug_props
+        lambda_factor = ug_props.extrusion_laplacian_lambda_factor
+        bmesh.ops.smooth_laplacian_vert(bm2, verts=verts2, \
+            lambda_factor=lambda_factor, lambda_border=0, use_x=True, \
+            use_y=True, use_z=True, preserve_volume=False)
+
+        # Move top vertices to points corresponding to smoothened vertices
+        for v in top_verts:
+            v.co = bm2.verts[vertmap[v]].co
+        bm2.free()
 
 
     # Main vertex extension + smoothing loops
@@ -968,6 +1073,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         # Run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):
+            # laplacian_smoothen_verts(bm, top_verts, top_faces)
             fi_areas = calculate_face_areas(top_faces)
             smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
                            base_faces, neighbour_vis_of_vi, \
@@ -977,6 +1083,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         # Carry out the rest of substeps (extend + smoothings)
         for j in range(ug_props.extrusion_substeps - 1):
+            # laplacian_smoothen_verts(bm, top_verts, top_faces)
             fi_areas = calculate_face_areas(top_faces)
             area_coeffs = calculate_mean_vertex_area_change( \
                 fi_areas, initial_face_areas, base_fis_of_vis)
