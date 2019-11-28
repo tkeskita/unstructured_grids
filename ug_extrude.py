@@ -88,8 +88,8 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                                   new_ugfaces, initial_face_areas)
             t1 = time.clock()
             l.debug("Extruded layer %d, " % (i + 1) \
-                + "cells added: %d " % n \
-                + "(%d cells/s)" % int(nf/(t1-t0)))
+                    + "cells added: %d " % n \
+                    + "(%d cells/s)" % int(nf/(t1-t0)))
             n += nf
 
         bm.normal_update()
@@ -455,6 +455,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                                            base_fis_of_vis)
 
 
+
     def calculate_max_convexities(bm, verts, faces):
         '''Calculate maximum convexities for verts.
         Convexity is a measure of face-face angles:
@@ -467,7 +468,91 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         all faces surrounding each vertex.
         '''
 
+        # Help geometry functions
+
+        def face_face_cos_angle(e, f, f_neighbor):
+            '''Calculate cosine of angle between two connected bmesh faces, which
+            share a common edge e. Return None if edge does not connect two
+            faces.
+            '''
+
+            # Make sure edge connects given two faces before continuing
+            etest = [etest for etest in f.edges if etest in f_neighbor.edges]
+            if e not in etest:
+                return None
+
+            # face center coordinates
+            f_center = f.calc_center_median()
+            f_neighbor_center = f_neighbor.calc_center_median()
+            return edge_vec_vec_cos_angle(e, f_center, f_neighbor_center)
+
+
+        def bmesh_edge_center(edge):
+            '''Calculates coordinates for edge center using edge vertex
+            coordinates
+            '''
+            return (edge.verts[0].co + edge.verts[1].co) / 2
+
+
+        def edge_vec_vec_cos_angle(e, vec1, vec2):
+            """Calculates cosine of angle between two vectors which are
+            orthogonal projections for edge e. This is used to calculate
+            cos(angle) for two faces which share edge e, and vec1 and vec2
+            represent the faces' center coordinate vectors.
+            """
+
+            # Calculate cos(epsilon) where epsilon is the angle between the two
+            # faces connected by edge e. cos(epsilon) is mathematically angle between
+            # vectors e_ortho_f -> f_center and e_ortho_f_neighbor -> f_neighbor_center.
+            # e_ortho_f is point along edge e which forms 90 degree angle between
+            # edge point 1 -> edge point 2 and e_ortho_f -> f_center.
+            # Similarly e_ortho_f_neighbor is point along edge e which forms 90 degree
+            # angle between edge point 1 -> edge point 2 and
+            # e_ortho_f_neighbor -> f_neighbor_center.
+            #
+            # Diagram example with two triangular faces: + marks face boundary edges,
+            # x = e_ortho_f, y = e_ortho_f_neighbor, c = edge or face center
+            #
+            #      +++
+            #     +   +++++
+            #    +  c       +++++            <-- f
+            #   +   I            +++++++
+            #  1----x------c---y--------2    <-- edge e
+            #   +++++          I      ++
+            #        +++++     c   +++       <-- f_neighbor
+            #             ++++   ++
+            #                 +++
+
+            e_center = bmesh_edge_center(e) # edge center
+            vec_e = e.verts[1].co - e.verts[0].co # edge vector
+
+            # Calculate orthogonal vector e_ortho_f -> f_center and normalize it
+            f_center = vec1 # face center coordinates
+            vec_f_center = f_center - e_center
+            project_f = vec_f_center.project(vec_e) # project vec_f to vec_e
+            e_ortho_f = e_center + project_f # coordinates for x
+            vec_ortho_f = f_center - e_ortho_f # orthogonal vector
+            vec_ortho_f.normalize() # normalize it
+
+            # Similarly to above, calculate orthogonal vector
+            # e_ortho_f_neighbor -> f_neighbor_center and normalize it
+            f_neighbor_center = vec2
+            vec_f_neighbor_center = f_neighbor_center - e_center
+            project_f_neighbor = vec_f_neighbor_center.project(vec_e)
+            e_ortho_f_neighbor = e_center + project_f_neighbor
+            vec_ortho_f_neighbor = f_neighbor_center - e_ortho_f_neighbor
+            vec_ortho_f_neighbor.normalize()
+
+            # Finally calculate cos(angle) between faces
+            cos_epsilon = vec_ortho_f @ vec_ortho_f_neighbor
+            # Limit -1.0 <= cos_epsilon <= 1.0 for physical correctness
+            cos_epsilon = max(-1.0, min(1.0, cos_epsilon))
+            return cos_epsilon
+
+
+        # Calculate maximum convexities
         max_convexities = []
+
         for vi, v in enumerate(verts):
             max_convexity = 0.0
             if fulldebug: l.debug("Vert %d:" % v.index)
@@ -747,51 +832,6 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
     ### Extending and smoothing ###
     ###############################
 
-    def convexity_limitation_function(val):
-        '''Transform convexity curve (value range 0-1) to wanted coefficient
-        range
-        '''
-        # TODO: Remove, unused
-
-        ug_props = bpy.context.scene.ug_props
-        # Minimum max_convexity to allow smoothing
-        a = ug_props.extrusion_convexity_min
-        # Maximum max_convexity to clamp smoothing
-        b = ug_props.extrusion_convexity_max
-        # Minimum clamp value
-        c = ug_props.extrusion_convexity_clamp_min
-        # Maximum clamp value
-        d = ug_props.extrusion_convexity_clamp_max
-
-        # Calculate limitation coefficient based on minimum convexity
-        slope = (d - c) / (b - a)
-        root = -a * slope
-        coeff = root + slope * val
-        coeff = min(d, max(c, coeff))
-        return coeff
-
-    def propagate_max_convexities(verts, max_convexities, neighbour_vis_of_vi):
-        '''Propagate maximum convexity value from neighbouring vertices'''
-        # TODO: Remove, unused
-
-        max_vals = []
-        ug_props = bpy.context.scene.ug_props
-        # allowed radius for propagation
-        radius = ug_props.extrusion_convexity_propagation_radius
-        for i, v in enumerate(verts):
-            nvals = get_items_from_list(max_convexities, neighbour_vis_of_vi[i])
-            nverts = get_items_from_list(verts, neighbour_vis_of_vi[i])
-            for nvi, nv in enumerate(nverts):
-                vec = nv.co - v.co
-                if vec.length < radius:
-                    scale = 1.0
-                else:
-                    scale = 0.0
-                nvals[nvi] *= scale
-            nvals.append(max_convexities[i]) # own value is possible, too
-            max_vals.append(max(nvals))
-        return max_vals
-
     def extend_verts(top_verts, base_verts, elens):
         '''Move top vertices away from base vertices to elongate cell'''
 
@@ -831,7 +871,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             '''
             from mathutils import Vector
             ug_props = bpy.context.scene.ug_props
-            # Smoothing factor is a relaxation factor for full smoothing
+            # Smoothing factor is under relaxation factor for full smoothing
             smoothing_factor = ug_props.extrusion_smoothing_factor
             neighbour_verts = [verts[i] for i in neighbour_vis_of_vi[vi]]
             areas = areas_from_fils(fi_areas, fils_of_neighbour_vis[vi])
@@ -936,42 +976,6 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             return b_co + u
 
 
-        def limit_co_by_plane(co, v, vdir):
-            '''Limit (smoothened) coordinates co by a plane whose normal is vdir
-            and plane location is a small distance from vertex v towards vdir.
-            If new coordinates co are on wrong side of the plane,
-            return new coordinates projected to the plane.
-            '''
-            # TODO: Remove, unused.
-            ug_props = bpy.context.scene.ug_props
-            elen = ug_props.extrusion_thickness \
-                / float(ug_props.extrusion_substeps + 1) # TODO: +1 enough, or need more?
-            cvec = vdir * elen
-
-            # Center coordinates of limitation plane
-            projection_fraction = 0.2 # TODO: Parametrize or remove
-            center = v.co + projection_fraction * cvec
-
-            testvec = co - center
-
-            # Return current coordinates if plane is not cut
-            cos_alpha = testvec.normalized() @ vdir
-            if cos_alpha > 0.0:
-                return co
-
-            # Otherwise, return projection to plane
-            scale = testvec @ vdir
-            newco = co - scale * vdir
-            return newco
-
-        def limit_by_faces(co, v, faces):
-            '''Limit coordinate co by faces around vertex v'''
-            # TODO: Remove, unused.
-            for f in faces:
-                co = limit_co_by_plane(co, v, f.normal)
-            return co
-
-
         new_coords = [] # new coordinate list
 
         for vi, v in enumerate(top_verts):
@@ -1000,26 +1004,12 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 l.debug("Propose move vertex %d " % v.index \
                         + "from %s to %s" % (str(v.co), str(newco)))
 
-            # Limitations
-            oldv = base_verts[vi]
-            old_faces = [base_faces[i] for i in base_fis_of_vis[vi]]
-
             # Limit by angle deviation
             cfactor = get_convexity_factor(max_convexities[vi])
-            if ug_props.extrusion_uses_angle_deviation:
+            oldv = base_verts[vi]
+            if ug_props.extrusion_uses_smoothing_constraints:
                 newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi], \
                                                     cfactor)
-
-            # Limit by plane calculated from extrusion vdir
-            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
-            # Limit by factor calculated from convexity
-            #if ug_props.extrusion_uses_convexity_limitation:
-            #    convexity_coeff = convexity_limitation_function(max_convexities[vi])
-            #    newco = v.co + (newco - v.co) * convexity_coeff
-            # Limit by surrounding faces
-            #newco = limit_by_faces(newco, oldv, old_faces)
-            # Limit again by vdir plane
-            #newco = limit_co_by_plane(newco, oldv, vdir[vi])
 
             new_coords.append(newco)
 
@@ -1035,14 +1025,6 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
     ug_props = bpy.context.scene.ug_props
     if not ug_props.extrusion_uses_fixed_initial_directions and \
         ug_props.extrusion_smoothing_iterations > 0:
-
-        # First carry out convexity limitation
-        #if ug_props.extrusion_uses_convexity_limitation:
-        #    max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
-        #    for i in range(ug_props.extrusion_convexity_propagations):
-        #        max_convexities = propagate_max_convexities(top_verts, \
-        #                                                    max_convexities, \
-        #                                                    neighbour_vis_of_vi)
 
         # Run smoothing rounds for first substep
         for i in range(ug_props.extrusion_smoothing_iterations):
@@ -1110,85 +1092,3 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         ugf.invert_face_dir()
 
     return bm, len(base_faces), vdir, new_ugfaces
-
-
-# Help functions
-
-def bmesh_edge_center(edge):
-    '''Calculates coordinates for edge center using edge vertex
-    coordinates
-    '''
-    return (edge.verts[0].co + edge.verts[1].co) / 2
-
-
-def face_face_cos_angle(e, f, f_neighbor):
-    '''Calculate cosine of angle between two connected bmesh faces, which
-    share a common edge e. Return None if edge does not connect two
-    faces.
-    '''
-
-    # Make sure edge connects given two faces before continuing
-    etest = [etest for etest in f.edges if etest in f_neighbor.edges]
-    if e not in etest:
-        return None
-
-    # face center coordinates
-    f_center = f.calc_center_median()
-    f_neighbor_center = f_neighbor.calc_center_median()
-    return edge_vec_vec_cos_angle(e, f_center, f_neighbor_center)
-
-
-def edge_vec_vec_cos_angle(e, vec1, vec2):
-    """Calculates cosine of angle between two vectors which are
-    orthogonal projections for edge e. This is used to calculate
-    cos(angle) for two faces which share edge e, and vec1 and vec2
-    represent the faces' center coordinate vectors.
-    """
-
-    # Calculate cos(epsilon) where epsilon is the angle between the two
-    # faces connected by edge e. cos(epsilon) is mathematically angle between
-    # vectors e_ortho_f -> f_center and e_ortho_f_neighbor -> f_neighbor_center.
-    # e_ortho_f is point along edge e which forms 90 degree angle between
-    # edge point 1 -> edge point 2 and e_ortho_f -> f_center.
-    # Similarly e_ortho_f_neighbor is point along edge e which forms 90 degree
-    # angle between edge point 1 -> edge point 2 and
-    # e_ortho_f_neighbor -> f_neighbor_center.
-    #
-    # Diagram example with two triangular faces: + marks face boundary edges,
-    # x = e_ortho_f, y = e_ortho_f_neighbor, c = edge or face center
-    #
-    #      +++
-    #     +   +++++
-    #    +  c       +++++            <-- f
-    #   +   I            +++++++
-    #  1----x------c---y--------2    <-- edge e
-    #   +++++          I      ++
-    #        +++++     c   +++       <-- f_neighbor
-    #             ++++   ++
-    #                 +++
-
-    e_center = bmesh_edge_center(e) # edge center
-    vec_e = e.verts[1].co - e.verts[0].co # edge vector
-
-    # Calculate orthogonal vector e_ortho_f -> f_center and normalize it
-    f_center = vec1 # face center coordinates
-    vec_f_center = f_center - e_center
-    project_f = vec_f_center.project(vec_e) # project vec_f to vec_e
-    e_ortho_f = e_center + project_f # coordinates for x
-    vec_ortho_f = f_center - e_ortho_f # orthogonal vector
-    vec_ortho_f.normalize() # normalize it
-
-    # Similarly to above, calculate orthogonal vector
-    # e_ortho_f_neighbor -> f_neighbor_center and normalize it
-    f_neighbor_center = vec2
-    vec_f_neighbor_center = f_neighbor_center - e_center
-    project_f_neighbor = vec_f_neighbor_center.project(vec_e)
-    e_ortho_f_neighbor = e_center + project_f_neighbor
-    vec_ortho_f_neighbor = f_neighbor_center - e_ortho_f_neighbor
-    vec_ortho_f_neighbor.normalize()
-
-    # Finally calculate cos(angle) between faces
-    cos_epsilon = vec_ortho_f @ vec_ortho_f_neighbor
-    # Limit -1.0 <= cos_epsilon <= 1.0 for physical correctness
-    cos_epsilon = max(-1.0, min(1.0, cos_epsilon))
-    return cos_epsilon

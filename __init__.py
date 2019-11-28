@@ -21,7 +21,7 @@
 bl_info = {
     "name": "Unstructured Grids for Blender",
     "author": "Tuomo Keskitalo",
-    "version": (0, 3, 0),
+    "version": (0, 4, 0),
     "blender": (2, 80, 0),
     "location": "File -> Import/Export, and 3D Viewport Side bar",
     "description": "Create, Import, Edit and Export Unstructured Grids (3D Volume Meshes)",
@@ -132,16 +132,10 @@ class UGProperties(bpy.types.PropertyGroup):
         precision=4,
         min=float_info.min, max=float_info.max
     )
-    # TODO: Remove?
-    #extrusion_ignores_unselected_face_normals: bpy.props.BoolProperty(
-    #    name="Ignore Unselected Face Normals",
-    #    description="Ignore Unselected Neighbour Face Normals in Calculation of Extrusion Direction",
-    #    default=True,
-    #)
     extrusion_substeps: bpy.props.IntProperty(
         name="Extrusion Substeps",
         description="Number of Extension and Smoothing Substeps per Layer",
-        default=2,
+        default=3,
         min=1, max=100
     )
     extrusion_uses_fixed_initial_directions: bpy.props.BoolProperty(
@@ -164,38 +158,33 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_smoothing_factor: bpy.props.FloatProperty(
         name="Smoothing Factor",
-        description="Smoothing Limitation Factor",
+        description="Smoothing Under Relaxation Factor",
         default=0.5,
         min=0.0, max=1.0
     )
-    extrusion_inhibition_factor: bpy.props.FloatProperty(
-        name="Inhibition Factor",
-        description="Smoothing Inhibition Factor for Concave Vertices",
-        default=10.0,
-        min=0.0, max=100.0
-    )
     extrusion_corner_factor: bpy.props.FloatProperty(
         name="Corner Factor",
-        description="Extrusion Corner Length Scale Factor",
+        description="Extrusion Corner Vertex Length Scale Factor",
         default=0.8,
         min=0.0, max=1.0
     )
     extrusion_area_factor: bpy.props.FloatProperty(
         name="Area Factor",
-        description="Scale Factor for Extrusion Length Based on Area Change",
-        default=0.8,
+        description="Under Relaxation Factor for Scaling Extrusion Length " \
+        + "Based on Extruded Face Area Change",
+        default=0.3,
         min=0.0, max=1.0
     )
     extrusion_growth_scale_factor: bpy.props.FloatProperty(
         name="Growth Scaling",
-        description="Extrusion Length Growth Scaling Factor",
+        description="Extrusion Length Growth Under Relaxation Factor",
         default=0.5,
         min=0.0, max=1.0
     )
     extrusion_convexity_scale_factor: bpy.props.FloatProperty(
         name="Convexity Scale",
         description="Extrusion Length Growth Scaling Factor for Convex Vertices",
-        default=5.0,
+        default=2.0,
         min=0.0, max=100.0
     )
     extrusion_uses_face_based_smoothing: bpy.props.BoolProperty(
@@ -203,9 +192,9 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Use Face Based Smoothing Algorithm (Instead of Neighbour Vertex Smoothing)",
         default=True,
     )
-    extrusion_uses_angle_deviation: bpy.props.BoolProperty(
-        name="Use Angle Deviation in Smoothing",
-        description="Use Angle Deviation Limitation in Smoothing",
+    extrusion_uses_smoothing_constraints: bpy.props.BoolProperty(
+        name="Use Smoothing Constraints",
+        description="Use Angle Deviation and Length Limitation in Smoothing",
         default=True,
     )
     extrusion_deviation_angle_min: bpy.props.FloatProperty(
@@ -226,48 +215,6 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Maximum Allowed Length Factor",
         default=20.0,
         min=0.0, max=100.0
-    )
-    # TODO: Remove convexity stuff below
-    extrusion_uses_convexity_limitation: bpy.props.BoolProperty(
-        name="Use Convexity Limitation in Smoothing",
-        description="Use Convexity Limitation in Smoothing",
-        default=False,
-    )
-    extrusion_convexity_min: bpy.props.FloatProperty(
-        name="Convexity Minimum",
-        description="Convexity Minimum Factor",
-        default=0.45,
-        min=0.0, max=1.0
-    )
-    extrusion_convexity_max: bpy.props.FloatProperty(
-        name="Convexity Maximum",
-        description="Convexity Maximum Factor",
-        default=0.8,
-        min=0.0, max=1.0
-    )
-    extrusion_convexity_clamp_min: bpy.props.FloatProperty(
-        name="Convexity Clamp Minimum",
-        description="Convexity Clamp Minimum Value",
-        default=1.0,
-        min=0.0, max=100.0
-    )
-    extrusion_convexity_clamp_max: bpy.props.FloatProperty(
-        name="Convexity Clamp Maximum",
-        description="Convexity Clamp Maximum Value",
-        default=2.0,
-        min=0.0, max=100.0
-    )
-    extrusion_convexity_propagations: bpy.props.IntProperty(
-        name="Convexity Propagation Iterations",
-        description="Number of Iterations to Propagate Maximum Convexity",
-        default=2,
-        min=0, max=1000
-    )
-    extrusion_convexity_propagation_radius: bpy.props.FloatProperty(
-        name="Convexity Propagation Radius",
-        description="Convexity Propagation Radius",
-        default=0.1,
-        min=0.0, max=1000.0
     )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
@@ -388,9 +335,6 @@ class VIEW3D_PT_UG_GUI:
         col = layout.column()
         rowsub = col.row(align=True)
         rowsub.prop(ug_props, "extrusion_layers", text="Layers")
-        # TODO: Remove
-        #rowsub.prop(ug_props, "extrusion_ignores_unselected_face_normals",
-        #            icon='NORMALS_FACE', text="")
         rowsub.prop(ug_props, "extrusion_uses_fixed_initial_directions",
                     icon='NORMALS_VERTEX_FACE', text="")
 
@@ -421,31 +365,14 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_growth_scale_factor", text="Growth Scaling")
 
             row = layout.row()
-            row.prop(ug_props, "extrusion_uses_angle_deviation", text="Use Angle and Length Limitation")
-            if ug_props.extrusion_uses_angle_deviation:
+            row.prop(ug_props, "extrusion_uses_smoothing_constraints")
+            if ug_props.extrusion_uses_smoothing_constraints:
                 row = layout.row()
                 row.prop(ug_props, "extrusion_deviation_angle_min")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_deviation_length_min")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_deviation_length_max")
-
-            # TODO: Remove convexity limitation
-            #row = layout.row()
-            #row.prop(ug_props, "extrusion_uses_convexity_limitation", text="Use Convexity Limitation")
-            #if ug_props.extrusion_uses_convexity_limitation:
-            #    row = layout.row()
-            #    row.prop(ug_props, "extrusion_convexity_min")
-            #    row = layout.row()
-            #    row.prop(ug_props, "extrusion_convexity_max")
-            #    row = layout.row()
-            #    row.prop(ug_props, "extrusion_convexity_clamp_min")
-            #    row = layout.row()
-            #    row.prop(ug_props, "extrusion_convexity_clamp_max")
-
-            # TODO: Remove inhibition if it is not needed in final version
-            #row = layout.row()
-            #row.prop(ug_props, "extrusion_inhibition_factor", text="Inhibition Factor")
 
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
