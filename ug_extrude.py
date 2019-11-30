@@ -1025,8 +1025,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             if ug_props.extrusion_uses_smoothing_constraints:
                 newco, startco, endco = limit_co_by_angle_deviation( \
                     newco, oldv, vdir[vi], cfactor)
-            startcos.append(startco)
-            endcos.append(endco)
+                startcos.append(startco)
+                endcos.append(endco)
+            else:
+                startcos.append(v.co)
+                endcos.append(v.co)
             new_coords.append(newco)
 
         # Move vertices to new coordinates after all new positions
@@ -1086,6 +1089,9 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                     # Check for negative projection
                     if cos_angle < 0.0:
                         q = EPS * n
+                    # Check for too large projection
+                    if q.length > n.length:
+                        q = Vector(n)
                     # Orthogonal coordinates
                     orco = startcos[i] + q
                     # Weight factor calculated from distance
