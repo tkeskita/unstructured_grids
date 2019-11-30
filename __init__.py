@@ -216,6 +216,23 @@ class UGProperties(bpy.types.PropertyGroup):
         default=20.0,
         min=0.0, max=100.0
     )
+    extrusion_uses_orthogonality_smoothing: bpy.props.BoolProperty(
+        name="Use Orthogonality Smoothing",
+        description="Use Orthogonality Improvement Orthogonality Smoothing",
+        default=True,
+    )
+    extrusion_orthogonality_smoothing_iterations: bpy.props.IntProperty(
+        name="Orthogonality Iterations",
+        description="Number of Orthogonality Smoothing Iterations",
+        default=2,
+        min=1, max=100
+    )
+    extrusion_orthogonality_smoothing_factor: bpy.props.FloatProperty(
+        name="Orthogonality Factor",
+        description="Under Relaxation Factor for Orthogonality Smoothing",
+        default=0.2,
+        min=0.0, max=1.0
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -373,6 +390,15 @@ class VIEW3D_PT_UG_GUI:
                 row.prop(ug_props, "extrusion_deviation_length_min")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_deviation_length_max")
+
+            row = layout.row()
+            row.prop(ug_props, "extrusion_uses_orthogonality_smoothing")
+            if ug_props.extrusion_uses_orthogonality_smoothing:
+                row = layout.row()
+                row.prop(ug_props, "extrusion_orthogonality_smoothing_iterations")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_orthogonality_smoothing_factor")
+
 
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \

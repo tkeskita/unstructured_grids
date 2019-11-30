@@ -950,10 +950,14 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             m = u.normalized()
             cos_alpha = m @ vdir
 
+            # Maximum allowed length from minimum projected vertex
+            max_len = max_len_coeff * convexity_factor * elen
+
             # If co is below minimum projected vertex normal plane,
-            # return minimum projected vertex coordinates
+            # then return minimum projected vertex coordinates
             if cos_alpha <= 0.0:
-                return b_co
+                endco = b_co + max_len * vdir
+                return b_co, b_co, endco
 
             # Otherwise, project u to minimum projected vertex vdir normal plane
             q = (u @ vdir) * vdir # u component aligned with vdir
@@ -967,21 +971,32 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 u = p + q
 
             # Decrease length (from minimum projected vertex) if needed
-            w = co - b_co
-            max_len = max_len_coeff * convexity_factor * elen
-            if w.length > max_len:
+            if u.length > max_len:
                 u.normalize()
                 u = max_len * u
 
-            return b_co + u
+            # New coordinates
+            newco = b_co + u
+
+            # Calculate also end (maximum allowed) coordinates for use in
+            # orthogonality smoothing
+            u.normalize()
+            u = max_len * u
+            endco = b_co + u
+
+            return newco, b_co, endco
 
 
         new_coords = [] # new coordinate list
+        startcos = [] # orthogonality smoothing base (minimum allowed) coordinates
+        endcos = [] # orthogonality smoothing end (maximum allowed) coordinates
 
         for vi, v in enumerate(top_verts):
             # Corners are not smoothened
             if is_corners[vi]:
                 new_coords.append(v.co)
+                startcos.append(v.co)
+                endcos.append(v.co)
                 continue
 
             # Smoothing of other boundary vertices
@@ -1008,15 +1023,94 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             cfactor = get_convexity_factor(max_convexities[vi])
             oldv = base_verts[vi]
             if ug_props.extrusion_uses_smoothing_constraints:
-                newco = limit_co_by_angle_deviation(newco, oldv, vdir[vi], \
-                                                    cfactor)
-
+                newco, startco, endco = limit_co_by_angle_deviation( \
+                    newco, oldv, vdir[vi], cfactor)
+            startcos.append(startco)
+            endcos.append(endco)
             new_coords.append(newco)
 
         # Move vertices to new coordinates after all new positions
         # have been calculated
         for v, c in zip(top_verts, new_coords):
             v.co = c
+
+
+        def orthogonality_smooth_iter(top_verts, startcos, endcos, \
+                                      neighbour_vis_of_vi, is_boundaries):
+            '''Orthogonality smoothing iteration. Vertices are moved along trajectory from
+            start vertex coordinates to end coordinates, to improve
+            orthogonality of top faces with extrusion direction.
+            '''
+
+            def weight(length):
+                '''Calculate weight from length'''
+                w = 1.0 / (length + 1.0)
+                return w * w
+
+            from mathutils import Vector
+            ug_props = bpy.context.scene.ug_props
+            # Under relaxation factor for orthogonality smoothing
+            psfactor = ug_props.extrusion_orthogonality_smoothing_factor
+
+            EPS = 1e-6 # minimum length fraction
+            new_coords = [] # new coordinate list
+            for i, tv in enumerate(top_verts):
+                # Don't touch boundaries
+                if is_boundaries[i]:
+                    new_coords.append(tv.co)
+                    continue
+                # Neighbour vertices
+                nvs = [top_verts[x] for x in neighbour_vis_of_vi[i]]
+                smoothco = Vector((0, 0, 0)) # Smoothened coordinates
+                totweight = 0.0 # total weight
+                for nv in nvs:
+                    # Vector from minimum coordinates to neighbour coordinates
+                    u = nv.co - startcos[i]
+                    # Normal direction from minimum to end coordinates
+                    n = endcos[i] - startcos[i]
+
+                    # Handle special cases
+                    if n.length < EPS or u.length / n.length < EPS:
+                        w = weight(EPS)
+                        totweight += w
+                        smoothco += w * tv.co
+                        continue
+
+                    # Project u to normalized n
+                    m = n.normalized()
+                    cos_angle = u @ m
+                    q = cos_angle * m # u component aligned with n
+                    # Check for orthogonal projection
+                    if q.length < EPS:
+                        q = EPS * n
+                    # Check for negative projection
+                    if cos_angle < 0.0:
+                        q = EPS * n
+                    # Orthogonal coordinates
+                    orco = startcos[i] + q
+                    # Weight factor calculated from distance
+                    w = weight(q.length)
+                    totweight += w
+                    # Add to smoothened coordinates
+                    smoothco += w * orco
+
+                # Normalize smoothened coordinates
+                smoothco /= totweight
+                # Add new coordinates
+                newco = tv.co + psfactor * (smoothco - tv.co)
+                new_coords.append(newco)
+
+            # Set new coordinates
+            for v,newco in zip(top_verts, new_coords):
+                v.co = newco
+
+        # Carry out orthogonality smoothing iteration
+        if ug_props.extrusion_uses_orthogonality_smoothing:
+            for i in range(ug_props.extrusion_orthogonality_smoothing_iterations):
+                orthogonality_smooth_iter(top_verts, startcos, endcos, \
+                                 neighbour_vis_of_vi, is_boundaries)
+
+
 
     ###########################################
     # Main vertex extension + smoothing loops #
