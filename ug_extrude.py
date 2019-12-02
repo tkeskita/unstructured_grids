@@ -670,7 +670,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
                 # Special scaling for corners
                 if ic:
-                    factor *= corner_factor
+                    factor = corner_factor
 
             step_length = ext_len * factor
             elens.append(step_length)
@@ -920,7 +920,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
             return v.co + co
 
-        def limit_co_by_angle_deviation(co, v, vdir, convexity_factor):
+        def limit_co_by_angle_deviation(co, v, vdir, convexity_factor, anglecoeff=1.0, lengthcoeff=1.0):
             '''Limit smoothened coordinates co by angle deviation.
             First, co is moved inside a conical volume. Cone starting
             point (minimum projected vertex) is a minimum length
@@ -934,11 +934,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Minimum allowed cosine of angle between vdir and u (vector from
             # minimum projected vertex to co)
-            min_cos_alpha = ug_props.extrusion_deviation_angle_min
+            min_cos_alpha = ug_props.extrusion_deviation_angle_min * anglecoeff
             # Minimum length coefficient for u
             min_len_coeff = ug_props.extrusion_deviation_length_min
             # Maximum length coefficient for u
-            max_len_coeff = ug_props.extrusion_deviation_length_max
+            max_len_coeff = ug_props.extrusion_deviation_length_max * lengthcoeff
             # Extension length
             elen = ug_props.extrusion_thickness \
                 / float(ug_props.extrusion_substeps)
@@ -1040,7 +1040,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             def weight(length):
                 '''Calculate weight from length'''
-                w = 1.0 / (length + 0.2) # Added value smoothens the weight
+                w = 1.0 / (length + 0.01) # Added value smoothens the weight
                 return w * w
 
             def get_opposing_vert_pairs(nvs, faces):
@@ -1104,11 +1104,10 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 cfactor = get_convexity_factor(max_convexities[vi])
                 if ug_props.extrusion_uses_smoothing_constraints:
                     limitedco, dummy1, dummy2 = limit_co_by_angle_deviation( \
-                        newco, base_verts[i], vdir[i], cfactor)
+                        newco, base_verts[i], vdir[i], cfactor, 0.1, 1.0)
 
                 # Add new coordinates
                 newco = tv.co + sfac * (limitedco - tv.co)
-                l.debug("newco %s limitedco %s" % (str(newco), str(limitedco)))
                 new_coords.append(newco)
 
             # Set new coordinates
