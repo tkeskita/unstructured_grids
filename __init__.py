@@ -233,6 +233,23 @@ class UGProperties(bpy.types.PropertyGroup):
         default=0.2,
         min=0.0, max=1.0
     )
+    extrusion_uses_quad_smoothing: bpy.props.BoolProperty(
+        name="Use Quad Smoothing",
+        description="Use Quad Smoothing",
+        default=True,
+    )
+    extrusion_quad_smoothing_iterations: bpy.props.IntProperty(
+        name="Quad Iterations",
+        description="Number of Quad Smoothing Iterations",
+        default=2,
+        min=1, max=100
+    )
+    extrusion_quad_smoothing_factor: bpy.props.FloatProperty(
+        name="Quad Factor",
+        description="Under Relaxation Factor for Quad Smoothing",
+        default=0.8,
+        min=0.0, max=1.0
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",
@@ -390,6 +407,14 @@ class VIEW3D_PT_UG_GUI:
                 row.prop(ug_props, "extrusion_deviation_length_min")
                 row = layout.row()
                 row.prop(ug_props, "extrusion_deviation_length_max")
+
+            row = layout.row()
+            row.prop(ug_props, "extrusion_uses_quad_smoothing")
+            if ug_props.extrusion_uses_quad_smoothing:
+                row = layout.row()
+                row.prop(ug_props, "extrusion_quad_smoothing_iterations")
+                row = layout.row()
+                row.prop(ug_props, "extrusion_quad_smoothing_factor")
 
             row = layout.row()
             row.prop(ug_props, "extrusion_uses_orthogonality_smoothing")

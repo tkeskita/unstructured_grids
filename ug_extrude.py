@@ -945,6 +945,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
             # Minimum projected vertex
             b_co = v.co + min_len_coeff * elen * vdir
+
             # Vector from minimum projected vertex to new coordinates
             u = co - b_co
             m = u.normalized()
@@ -988,15 +989,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
 
         new_coords = [] # new coordinate list
-        startcos = [] # orthogonality smoothing base (minimum allowed) coordinates
-        endcos = [] # orthogonality smoothing end (maximum allowed) coordinates
 
         for vi, v in enumerate(top_verts):
             # Corners are not smoothened
             if is_corners[vi]:
                 new_coords.append(v.co)
-                startcos.append(v.co)
-                endcos.append(v.co)
                 continue
 
             # Smoothing of other boundary vertices
@@ -1025,11 +1022,6 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             if ug_props.extrusion_uses_smoothing_constraints:
                 newco, startco, endco = limit_co_by_angle_deviation( \
                     newco, oldv, vdir[vi], cfactor)
-                startcos.append(startco)
-                endcos.append(endco)
-            else:
-                startcos.append(v.co)
-                endcos.append(v.co)
             new_coords.append(newco)
 
         # Move vertices to new coordinates after all new positions
@@ -1038,8 +1030,101 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             v.co = c
 
 
-        def orthogonality_smooth_iter(top_verts, startcos, endcos, \
-                                      neighbour_vis_of_vi, is_boundaries):
+        def quad_smooth_iter(base_verts, top_verts, anvis_of_vi, fis_of_vis, \
+                             top_faces, is_boundaries, max_convexities, vdir):
+            '''Quad smoothing iteration. Moves vertices with four edges towards a
+            weighted median point calculated from opposing neighbour
+            vertex locations. Opposing neighbour vertices are
+            neighbour vertices that don't share faces.
+            '''
+
+            def weight(length):
+                '''Calculate weight from length'''
+                w = 1.0 / (length + 0.2) # Added value smoothens the weight
+                return w * w
+
+            def get_opposing_vert_pairs(nvs, faces):
+                '''Return opposite quad vertex pairs in neighbour vertex list nvs and
+                neighbour faces list
+                '''
+                v1fs = [x for x in faces if x in nvs[0].link_faces]
+                v2fs = [x for x in faces if x in nvs[1].link_faces]
+                v3fs = [x for x in faces if x in nvs[2].link_faces]
+
+                if v1fs[0] not in v2fs and v1fs[1] not in v2fs:
+                    v1 = nvs[0]
+                    v2 = nvs[1]
+                    v3 = nvs[2]
+                    v4 = nvs[3]
+                elif v1fs[0] not in v3fs and v1fs[1] not in v3fs:
+                    v1 = nvs[0]
+                    v2 = nvs[2]
+                    v3 = nvs[1]
+                    v4 = nvs[3]
+                else:
+                    v1 = nvs[0]
+                    v2 = nvs[3]
+                    v3 = nvs[1]
+                    v4 = nvs[2]
+                return v1, v2, v3, v4
+
+            ug_props = bpy.context.scene.ug_props
+            # Under relaxation factor for orthogonality smoothing
+            sfac = ug_props.extrusion_quad_smoothing_factor
+
+            new_coords = [] # new coordinate list
+            for i, tv in enumerate(top_verts):
+                # Don't touch boundaries
+                if is_boundaries[i]:
+                    new_coords.append(tv.co)
+                    continue
+
+                # Neighbour vertices
+                nvs = [top_verts[x] for x in anvis_of_vi[i]]
+
+                # Only process quad verts
+                if len(nvs) != 4:
+                    new_coords.append(tv.co)
+                    continue
+
+                # Neighbour faces
+                neighfaces = [top_faces[x] for x in fis_of_vis[i]]
+                v1, v2, v3, v4 = get_opposing_vert_pairs(nvs, neighfaces)
+                vec12 = v2.co - v1.co
+                midpoint12 = (v1.co + v2.co) / 2.0
+                w12 = weight(vec12.length)
+
+                vec34 = v4.co - v3.co
+                midpoint34 = (v3.co + v4.co) / 2.0
+                w34 = weight(vec34.length)
+
+                newco = (w12 * midpoint12 + w34 * midpoint34) / (w12 + w34)
+
+                # Limit by angle deviation
+                cfactor = get_convexity_factor(max_convexities[vi])
+                if ug_props.extrusion_uses_smoothing_constraints:
+                    limitedco, dummy1, dummy2 = limit_co_by_angle_deviation( \
+                        newco, base_verts[i], vdir[i], cfactor)
+
+                # Add new coordinates
+                newco = tv.co + sfac * (limitedco - tv.co)
+                l.debug("newco %s limitedco %s" % (str(newco), str(limitedco)))
+                new_coords.append(newco)
+
+            # Set new coordinates
+            for v,newco in zip(top_verts, new_coords):
+                v.co = newco
+
+        # Carry out quad smoothing iteration
+        if ug_props.extrusion_uses_quad_smoothing:
+            for i in range(ug_props.extrusion_quad_smoothing_iterations):
+                quad_smooth_iter(base_verts, top_verts, anvis_of_vi, \
+                                 base_fis_of_vis, top_faces, is_boundaries, \
+                                 max_convexities, vdir)
+
+
+        def orthogonality_smooth_iter(base_verts, top_verts, anvis_of_vi, \
+                                      is_boundaries, max_convexities, vdir):
             '''Orthogonality smoothing iteration. Vertices are moved along trajectory from
             start vertex coordinates to end coordinates, to improve
             orthogonality of top faces with extrusion direction.
@@ -1053,7 +1138,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             from mathutils import Vector
             ug_props = bpy.context.scene.ug_props
             # Under relaxation factor for orthogonality smoothing
-            psfactor = ug_props.extrusion_orthogonality_smoothing_factor
+            sfac = ug_props.extrusion_orthogonality_smoothing_factor
 
             EPS = 1e-6 # minimum length fraction
             new_coords = [] # new coordinate list
@@ -1062,27 +1147,35 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 if is_boundaries[i]:
                     new_coords.append(tv.co)
                     continue
+
+                # Get start and end points from angle deviation
+                cfactor = get_convexity_factor(max_convexities[vi])
+                newco, startco, endco = limit_co_by_angle_deviation( \
+                    tv.co, base_verts[i], vdir[i], cfactor)
+
                 # Neighbour vertices
-                nvs = [top_verts[x] for x in neighbour_vis_of_vi[i]]
-                smoothco = Vector((0, 0, 0)) # Smoothened coordinates
+                nvs = [top_verts[x] for x in anvis_of_vi[i]]
+                newco = Vector((0, 0, 0)) # Smoothened coordinates
                 totweight = 0.0 # total weight
+
                 for nv in nvs:
                     # Vector from minimum coordinates to neighbour coordinates
-                    u = nv.co - startcos[i]
+                    u = nv.co - startco
                     # Normal direction from minimum to end coordinates
-                    n = endcos[i] - startcos[i]
+                    n = endco - startco
 
                     # Handle special cases
                     if n.length < EPS or u.length / n.length < EPS:
                         w = weight(EPS)
                         totweight += w
-                        smoothco += w * tv.co
+                        newco += w * tv.co
                         continue
 
                     # Project u to normalized n
                     m = n.normalized()
                     cos_angle = u @ m
                     q = cos_angle * m # u component aligned with n
+
                     # Check for orthogonal projection
                     if q.length < EPS:
                         q = EPS * n
@@ -1092,18 +1185,19 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                     # Check for too large projection
                     if q.length > n.length:
                         q = Vector(n)
+
                     # Orthogonal coordinates
-                    orco = startcos[i] + q
+                    orco = startco + q
                     # Weight factor calculated from distance
                     w = weight(q.length)
                     totweight += w
                     # Add to smoothened coordinates
-                    smoothco += w * orco
+                    newco += w * orco
 
                 # Normalize smoothened coordinates
-                smoothco /= totweight
+                newco /= totweight
                 # Add new coordinates
-                newco = tv.co + psfactor * (smoothco - tv.co)
+                newco = tv.co + sfac * (newco - tv.co)
                 new_coords.append(newco)
 
             # Set new coordinates
@@ -1113,8 +1207,8 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         # Carry out orthogonality smoothing iteration
         if ug_props.extrusion_uses_orthogonality_smoothing:
             for i in range(ug_props.extrusion_orthogonality_smoothing_iterations):
-                orthogonality_smooth_iter(top_verts, startcos, endcos, \
-                                 neighbour_vis_of_vi, is_boundaries)
+                orthogonality_smooth_iter(base_verts, top_verts, anvis_of_vi, \
+                                          is_boundaries, max_convexities, vdir)
 
 
 
