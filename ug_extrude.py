@@ -62,7 +62,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Layer extrusion, initialize stuff
         ug_props = bpy.context.scene.ug_props
         n = 0 # new cell count
-        vdir = [] # Extrusion directions, can be updated per layer
+        speeds = [] # Extrusion speed vectors, can be updated per layer
         new_ugfaces = [] # List of new ugfaces created in extrusion
 
         import bmesh
@@ -79,12 +79,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         for i in range(ug_props.extrusion_layers):
             t0 = time.clock()
             if i == 0:
-                bm, nf, vdir, new_ugfaces = \
-                    extrude_cells(bm, initial_faces, vdir, \
+                bm, nf, speeds, new_ugfaces = \
+                    extrude_cells(bm, initial_faces, speeds, \
                                   new_ugfaces, initial_face_areas)
             else:
-                bm, nf, vdir, new_ugfaces = \
-                    extrude_cells(bm, [], vdir, \
+                bm, nf, speeds, new_ugfaces = \
+                    extrude_cells(bm, [], speeds, \
                                   new_ugfaces, initial_face_areas)
             t1 = time.clock()
             l.debug("Extruded layer %d, " % (i + 1) \
@@ -175,7 +175,7 @@ def initialize_extrusion():
     return True, initial_faces
 
 
-def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
+def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -278,26 +278,56 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         edges at vertex.
         '''
 
-        def classify_vert(v, ibasevertmap, edges, faces):
+        def classify_vert(v, ibasevertmap, edges, vfaces):
             '''Classify argument vertex v.
             First return value is True if v is corner vertex.
             Second return value is True if v is boundary vertex.
             Third return value is list of two vertex indices (vis) pointing to
             neighbour boundary vertices (only for boundary vertices).
-            Fourth return value is list of all neighbour vertices
+            Fourth return value is list of all neighbour vertices,
+            in face connection order.
             '''
             bn_vis = [] # boundary neighbour vis (vertex indices)
             bn_faces = [] # boundary neighbour faces
             an_vis = [] # all neighbour vis (connected by edges)
-            for e in v.link_edges:
-                if e not in edges:
-                    continue
+            processed_faces = [] # list of traversed faces
+            processed_edges = [] # list of traversed edges
+
+            # Find an edge to start from. Must be a boundary edge for
+            # boundary verts, for face traversal to work correctly.
+            v_edges = [x for x in v.link_edges if x in edges]
+            for e in v_edges:
+                e_faces = [x for x in e.link_faces if x in vfaces]
+                if len(e_faces) == 1:
+                    break
+            if e not in edges:
+                raise ValueError("error edge %d" % e.index)
+
+            # Go through all edges in face connection order
+            while e not in processed_edges and v in e.verts:
+                # Process new edge
                 an_vis.append(ibasevertmap[e.other_vert(v)])
-                link_faces = [x for x in e.link_faces if x in faces]
+                link_faces = [x for x in e.link_faces if x in vfaces]
                 if len(link_faces) == 1:
                     bn_vis.append(ibasevertmap[e.other_vert(v)])
                     bn_faces.append(link_faces[0])
+                processed_edges.append(e)
 
+                # Get a connected unprocessed vface
+                for f in link_faces:
+                    if f not in processed_faces:
+                        break
+                processed_faces.append(f)
+
+                # Get the next connected edge
+                for e in f.edges:
+                    if e in processed_edges:
+                        continue
+                    if v not in e.verts:
+                        continue
+                    break
+
+            # Return classification information
             if len(bn_vis) == 2:
                 if bn_faces[0] == bn_faces[1]:
                     return True, True, [bn_vis[0], bn_vis[1]], an_vis
@@ -307,15 +337,14 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         # Turn lists into sets for fast testing
         edgeset = set(edges)
-        faceset = set(faces)
-
         is_corners = []
         is_boundaries = []
         bn_vis = [] # boundary vertex neighbours
         an_vis = [] # all vertex neighbours
-        for v in verts:
+        for vi, v in enumerate(verts):
+            vfaces = [faces[x] for x in fis_of_vis[vi]] # faces around vertex
             is_corner, is_boundary, bn_verts, an_verts = \
-                classify_vert(v, ibasevertmap, edgeset, faceset)
+                classify_vert(v, ibasevertmap, edgeset, vfaces)
             is_corners.append(is_corner)
             is_boundaries.append(is_boundary)
             bn_vis.append(bn_verts)
@@ -327,9 +356,15 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
             classify_verts(base_verts, base_edges, base_faces, \
                            base_fis_of_vis, ibasevertmap)
-    else:
-        # Dummy default for fixed extrusion
-        is_corners = [False] * len(base_verts)
+        if fulldebug:
+            l.debug("is_corners %s" % str(is_corners))
+            l.debug("is_boundaries %s" % str(is_boundaries))
+            l.debug("bnvis_of_vi %s" % str(bnvis_of_vi))
+            l.debug("anvis_of_vi %s" % str(anvis_of_vi))
+
+    #else: # TODO: remove
+    #    # Dummy default for fixed extrusion
+    #    is_corners = [False] * len(base_verts)
 
 
     def get_face_vis_of_vi(verts, fis_of_vis, vis_of_fis):
@@ -416,7 +451,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         return res
 
 
-    def calculate_initial_extrusion_dir(vdir, verts, faces, fis_of_vis):
+    def calculate_initial_speeds(speeds, verts, faces, fis_of_vis):
         '''Calculate initial extrusion direction vectors by averaging face
         normals surrounding each vertex, weighted by face vertex angle
         (the angle between the two edges of the face connected at vertex).
@@ -425,12 +460,15 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         from mathutils import Vector
         ug_props = bpy.context.scene.ug_props
 
+        # Base extension length of a substep
+        ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+
         # Do nothing if initial direction option is enabled
-        if len(vdir) > 0 and ug_props.extrusion_uses_fixed_initial_directions:
-            return vdir
+        if len(speeds) > 0 and ug_props.extrusion_uses_fixed_initial_directions:
+            return speeds
 
         # Calculate new extrusion directions
-        vdir = []
+        speeds = []
         for vi in range(len(verts)):
             angle_factors = []
             neigh_faces = get_items_from_list(faces, fis_of_vis[vi])
@@ -441,18 +479,19 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 angle_factor = (-1.0 * get_face_vertex_cos_angle(verts[vi], f)) + 1.0
                 angle_factors.append(angle_factor)
 
-            # Calculate final vdir from normals and weights
+            # Calculate final speeds from normals and weights
             norvecs = [f.normal for f in neigh_faces]
             norvec = Vector((0, 0, 0))
             for nv, factor in zip(norvecs, angle_factors):
                 norvec += factor * nv
             norvec.normalize()
-            vdir.append(norvec)
+            norvec *= ext_len # Set velocity to length of substep
+            speeds.append(norvec)
 
-        return vdir
+        return speeds
 
-    vdir = calculate_initial_extrusion_dir(vdir, base_verts, base_faces, \
-                                           base_fis_of_vis)
+    speeds = calculate_initial_speeds(speeds, base_verts, base_faces, \
+                                      base_fis_of_vis)
 
 
 
@@ -582,11 +621,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             max_convexities.append(max_convexity)
         return max_convexities
 
-    max_convexities = len(base_verts) * [0.5]
-    EPS = 1e-4 # Small number for detection of non-zero value
-    if ug_props.extrusion_convexity_scale_factor > EPS or \
-       ug_props.extrusion_uses_convexity_limitation:
-        max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
+    #max_convexities = len(base_verts) * [0.5]
+    #EPS = 1e-4 # Small number for detection of non-zero value
+    #if ug_props.extrusion_convexity_scale_factor > EPS or \
+    #   ug_props.extrusion_uses_convexity_limitation:
+    #    max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
 
 
     def calculate_face_areas(faces):
@@ -596,7 +635,7 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             areas.append(f.calc_area())
         return areas
 
-    fi_areas = calculate_face_areas(base_faces)
+    #fi_areas = calculate_face_areas(base_faces)
 
 
     def calculate_mean_vertex_area_change(fi_areas, initial_face_areas, \
@@ -615,8 +654,8 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             mean_changes.append(mean_change)
         return mean_changes
 
-    area_coeffs = calculate_mean_vertex_area_change( \
-        fi_areas, initial_face_areas, base_fis_of_vis)
+    #area_coeffs = calculate_mean_vertex_area_change( \
+    #    fi_areas, initial_face_areas, base_fis_of_vis)
 
 
     def get_convexity_factor(max_convexity):
@@ -677,11 +716,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
 
         return elens
 
-    elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
+    # elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
 
-    def cast_vertices(bm, base_verts, vdir, elens, max_convexities):
+    def cast_vertices(bm, base_verts, speeds):
         '''Create new top vertices from base vertices in argument bmesh, by
-        casting each vertex towards vdir (length elen). Returns updated bmesh,
+        casting each vertex towards speeds (length elen). Returns updated bmesh,
         top vertices and map from base verts to new top verts.
         '''
 
@@ -689,10 +728,15 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         ug_props = bpy.context.scene.ug_props
         top_verts = []
 
-        # Cast new vertices
+        # Full step for fixed extrusion, small initial step for hyperbolic
+        if ug_props.extrusion_uses_fixed_initial_directions:
+            speed_scale = 1.0
+        else:
+            speed_scale = 0.001
+
+        # Cast new vertices very small distance ahead
         for i in range(len(base_verts)):
-            elen = elens[i] # Extrusion length
-            newco = base_verts[i].co + elen * vdir[i]
+            newco = base_verts[i].co + speed_scale * speeds[i]
             v2 = bm.verts.new(newco)
             vert_map[base_verts[i]] = v2
             top_verts.append(v2)
@@ -700,11 +744,11 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 
-        if fulldebug: l.debug("Cast %d vertices" % len(vdir))
+        if fulldebug: l.debug("Cast %d vertices" % len(speeds))
         return bm, top_verts, vert_map
 
     bm, top_verts, vert_map = cast_vertices(\
-        bm, base_verts, vdir, elens, max_convexities)
+        bm, base_verts, speeds)
 
 
     def create_mesh_faces(bm, edge2sideface_index, vert_map, base_faces, \
@@ -828,103 +872,193 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
     correct_face_normals(bm, base_faces, ugci0)
 
 
-    ###############################
-    ### Extending and smoothing ###
-    ###############################
+    def calculate_intvpairs(anvis_of_vi, fis_of_vis, is_boundaries):
+        '''Calculate index list of vpairs indices for verts. vpairs are
+        neighbour vertex pairs of a vertex, which don't share
+        faces. First return value is list of lists of first vertices,
+        and second return value similar list of lists of paired
+        vertices.
+        '''
 
-    def extend_verts(top_verts, base_verts, elens):
-        '''Move top vertices away from base vertices to elongate cell'''
+        intvis = [] # Internal vertex indices
+        intvpairs0 = [] # Internal vertex indices, first of pair
+        intvpairs1 = [] # Internal vertex indices, second of pair
+        for vi in range(len(anvis_of_vi)):
+            # Boundary vertices are not needed
+            if is_boundaries[vi]:
+                intvpairs0.append([])
+                intvpairs1.append([])
+                continue
 
-        for tv, bv, elen in zip(top_verts, base_verts, elens):
-            vdir = tv.co - bv.co
-            vdir.normalize()
-            tv.co = tv.co + vdir * elen
+            # Internal vertex found
+            intvis.append(vi)
+
+            # Build lists of vpairs for vertex
+            ivp0 = []
+            ivp1 = []
+            anvis = anvis_of_vi[vi]
+            for i in range(len(anvis)):
+                for j in range(i + 1, len(anvis)):
+                    fsi = set(fis_of_vis[anvis[i]])
+                    fsj = set(fis_of_vis[anvis[j]])
+
+                    # If any face is common to both sets skip this combination
+                    if len(fsi.intersection(fsj)) > 0:
+                        continue
+                    # Otherwise, vpair has been found, add 'em
+                    ivp0.append(anvis[i])
+                    ivp1.append(anvis[j])
+            intvpairs0.append(ivp0)
+            intvpairs1.append(ivp1)
+        return intvis, intvpairs0, intvpairs1
+
+    if not ug_props.extrusion_uses_fixed_initial_directions:
+        intvis, intvpairs0, intvpairs1 = \
+            calculate_intvpairs(anvis_of_vi, base_fis_of_vis, is_boundaries)
 
 
-    def smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
-                       base_faces, neighbour_vis_of_vi, fils_of_neighbour_vis, \
-                       fi_areas, bnvis_of_vi, base_fis_of_vis, \
-                       max_convexities, anvis_of_vi):
-        '''Smoothen top vertex locations'''
+    ########################################
+    # Formation Flying Extrusion Algorithm #
+    ########################################
 
-        def areas_from_fils(fi_areas, fils_of_vi):
-            '''Get averaged face areas list for a vertex from areas and face index
-            list (faces surrounding the vertex)
+    def evolve_substep(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
+                       intvpairs0, intvpairs1):
+        '''Evolve extrusion by one substep'''
+
+        # Help functions
+
+        def get_estimated_cos(verts, speeds):
+            '''Estimate next locations of vertices based on current locations and
+            speeds
             '''
-            areas = []
-            for fis in fils_of_vi:
-                area = 0.0
-                n = 0
-                for fi in fis:
-                    area += fi_areas[fi]
-                    n += 1
-                area /= float(n)
-                areas.append(area)
-            return areas
+            estimated_cos = []
+            for v, s in zip(verts, speeds):
+                estimated_cos.append(v.co + s)
+            return estimated_cos
 
-        def new_internal_co_from_vert_area_weighted(v, vi, verts, \
-                                                    neighbour_vis_of_vi, \
-                                                    fils_of_neighbour_vis, \
-                                                    fi_areas):
-            '''Calculate new location for argument vertex v from neighbour
-            vertices weighted by surrounding face areas
+        def project_pvs_pvspeeds(vi, verts, anvis, speeds):
+            '''Project neighbour vertex locations and speeds to vertex vi speed
+            normal plane
             '''
             from mathutils import Vector
-            ug_props = bpy.context.scene.ug_props
-            # Smoothing factor is under relaxation factor for full smoothing
-            smoothing_factor = ug_props.extrusion_smoothing_factor
-            neighbour_verts = [verts[i] for i in neighbour_vis_of_vi[vi]]
-            areas = areas_from_fils(fi_areas, fils_of_neighbour_vis[vi])
-            tot_area = sum(areas)
+            cv = verts[vi] # center vertex
+            cvdir = Vector(speeds[vi]) # copy of center vertex normal vector
+            cvdir.normalize()
 
-            co = Vector((0, 0, 0))
-            for nv, area in zip(neighbour_verts, areas):
-                co += (nv.co - v.co) * area
-            co = co / tot_area * smoothing_factor
+            nvs = [verts[x] for x in anvis] # neighbour vertices
+            nvspeeds = [speeds[x] for x in anvis] # neighbour speeds
 
-            if fulldebug: l.debug("co %s %f" % (str(co), co.length))
-            if fulldebug: l.debug("tot_area %f" % tot_area)
-            return v.co + co
+            pvs = [] # projected neighbour coordintes (center vertex at origin)
+            pvspeeds = [] # projected neighbour speeds
 
-        def new_internal_co_from_vert_neighbours(v, vi, verts, anvis_of_vi):
-            '''Calculate new location for argument vertex v from vertex neighbour
-            vertices average location
+            i = 0
+            for v, speed in zip(nvs, nvspeeds):
+                # Project coordinates
+                u = v.co - cv.co # vector from center vertex to neighbour vertex
+                q = (u @ cvdir) * cvdir # u component aligned with cvdir
+                p = u - q # u component normal to cvdir
+                pvs.append(p)
+
+                # Project speed
+                u = speed
+                q = (u @ cvdir) * cvdir
+                p = u - q
+                pvspeeds.append(p)
+
+            return pvs, pvspeeds
+
+        def get_mid_cos(vpairs0, vpairs1, estimated_cos):
+            '''Calculate middle coordinates for all vpairs'''
+            mid_cos = []
+            for v0, v1 in zip(vpairs0, vpairs1):
+                co = (estimated_cos[v0] + estimated_cos[v1]) / 2.0
+                mid_cos.append(co)
+            return mid_cos
+
+        def get_target_cos(cv, speed, mid_cos):
+            '''First return value is is_above_cos = True if mid_co is located
+            above direction normal plane, otherwise False (for each
+            mid_co). Second return value is target_cos = mid_cos if
+            above normal plane, otherwise mid_co is projected speed
+            length above direction normal plane.
+            '''
+            cvdir = speed.normalized() # center vertex normal vector
+            is_above_cos = [] # Booleans for co being located above normal plane
+            target_cos = [] # Target coordinates
+
+            for co in mid_cos:
+                # Project coordinates
+                u = co - cv.co # vector from center vertex to neighbour vertex
+                unorm = u.normalized()
+                cos_angle = unorm @ cvdir
+
+                # co is above normal plane
+                if cos_angle > 0.0:
+                    is_above_cos.append(True)
+                    target_cos.append(co)
+                    continue
+
+                # co is below normal plane
+                is_above_cos.append(False)
+                q = (u @ cvdir) * cvdir # u component aligned with cvdir
+                p = u - q # u component normal to cvdir
+                newco = cv.co + p + speed
+                target_cos.append(newco)
+            return is_above_cos, target_cos
+
+        def get_cut_substeps(vpairs0, vpairs1, vimap, pvs, pvspeeds):
+            '''Calculate how many substeps it would take for intersection to
+            happen for each neighbour vertex pair if neighbours
+            continued with their current pspeeds
+            '''
+            LARGE = 100.0 # Cut-off for large values
+            cut_substeps = [] # estimated substeps until intersection
+
+            # Process each vertex pair
+            for i, j in zip(vpairs0, vpairs1):
+                co0 = pvs[vimap[i]]
+                co1 = pvs[vimap[j]]
+                s0 = pvspeeds[vimap[i]]
+                s1 = pvspeeds[vimap[j]]
+
+                # Calculate substeps until intersection
+                vec0 = co1 - co0 # vector between verts
+                vdir = vec0.normalized()
+                q0 = (s0 @ vdir) * vdir # speed component aligned with vdir
+                q1 = (s1 @ vdir) * vdir # speed component aligned with vdir
+
+                vec1 = co1 + q1 - (co0 + q0) # vector between moved verts
+
+                # If distance is increasing (not going to intersect),
+                # then set cut_substep to LARGE
+                if vec1.length > vec0.length:
+                    cut_substeps.append(LARGE)
+
+                # Otherwise calculate substeps until intersection
+                else:
+                    cut_step = vec0.length / (vec0.length - vec1.length)
+                    cut_step = min(LARGE, cut_step)
+                    cut_substeps.append(cut_step)
+            return cut_substeps
+
+        def get_pvgm_target_co(speed, pvs, pvspeeds):
+            '''Calculate projected geometric mean from vertex neighbours'
+            projected locations and speeds. Target coordinate is
+            projected up from center vertex normal plane according to
+            speed.
             '''
             from mathutils import Vector
-            ug_props = bpy.context.scene.ug_props
-            smoothing_factor = ug_props.extrusion_smoothing_factor
-            neighbour_verts = [verts[i] for i in anvis_of_vi[vi]]
-
             co = Vector((0, 0, 0))
-            for nv in neighbour_verts:
-                co += (nv.co - v.co)
-            co *= smoothing_factor / float(len(neighbour_verts))
+            for vco, s in zip(pvs, pvspeeds):
+                co += vco + s
+            co /= float(len(pvs))
+            return co + speed
 
-            if fulldebug: l.debug("co %s %f" % (str(co), co.length))
-            return v.co + co
-
-
-        def new_boundary_co_from_verts(v, vi, verts, bnvis_of_vi):
-            '''Calculate new vertex v location from neighbour boundary vertices
-            v1 and v2
-            '''
-            ug_props = bpy.context.scene.ug_props
-            smoothing_factor = ug_props.extrusion_smoothing_factor
-            v1 = verts[bnvis_of_vi[vi][0]]
-            v2 = verts[bnvis_of_vi[vi][1]]
-            vec1 = (v1.co - v.co)
-            vec2 = (v2.co - v.co)
-            sqlen1 = vec1.length * vec1.length
-            sqlen2 = vec2.length * vec2.length
-            sqtot = sqlen1 + sqlen2
-            co = 0.5 * (vec1 * sqlen1 + vec2 * sqlen2) / sqtot * smoothing_factor
-            return v.co + co
-
-        def limit_co_by_angle_deviation(co, v, vdir, convexity_factor, anglecoeff=1.0, lengthcoeff=1.0):
+        def limit_co_by_angle_deviation(co, v, speed):
             '''Limit smoothened coordinates co by angle deviation.
             First, co is moved inside a conical volume. Cone starting
             point (minimum projected vertex) is a minimum length
-            from base vertex towards extension direction vdir.
+            from base vertex towards speed vector.
             Second, length from minimum projected vertex is limited to
             a maximum distance.
             '''
@@ -932,35 +1066,16 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
             from math import sqrt
             ug_props = bpy.context.scene.ug_props
 
-            # Minimum allowed cosine of angle between vdir and u (vector from
-            # minimum projected vertex to co)
-            min_cos_alpha = ug_props.extrusion_deviation_angle_min * anglecoeff
-            # Minimum length coefficient for u
-            min_len_coeff = ug_props.extrusion_deviation_length_min
-            # Maximum length coefficient for u
-            max_len_coeff = ug_props.extrusion_deviation_length_max * lengthcoeff
-            # Extension length
-            elen = ug_props.extrusion_thickness \
-                / float(ug_props.extrusion_substeps)
+            # Minimum allowed cosine of angle
+            min_cos_alpha = ug_props.extrusion_deviation_angle_min
 
-            # Minimum projected vertex
-            b_co = v.co + min_len_coeff * elen * vdir
-
-            # Vector from minimum projected vertex to new coordinates
-            u = co - b_co
+            # Vector from vertex to new coordinates
+            u = co - v.co
             m = u.normalized()
+            vdir = speed.normalized()
             cos_alpha = m @ vdir
 
-            # Maximum allowed length from minimum projected vertex
-            max_len = max_len_coeff * convexity_factor * elen
-
-            # If co is below minimum projected vertex normal plane,
-            # then return minimum projected vertex coordinates
-            if cos_alpha <= 0.0:
-                endco = b_co + max_len * vdir
-                return b_co, b_co, endco
-
-            # Otherwise, project u to minimum projected vertex vdir normal plane
+            # Project u to vdir normal plane
             q = (u @ vdir) * vdir # u component aligned with vdir
             p = u - q # u component normal to vdir
 
@@ -971,278 +1086,142 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
                 p = plen * q.length * p
                 u = p + q
 
-            # Decrease length (from minimum projected vertex) if needed
-            if u.length > max_len:
-                u.normalize()
-                u = max_len * u
-
             # New coordinates
-            newco = b_co + u
+            return v.co + u
 
-            # Calculate also end (maximum allowed) coordinates for use in
-            # orthogonality smoothing
-            u.normalize()
-            u = max_len * u
-            endco = b_co + u
-
-            return newco, b_co, endco
-
-
-        new_coords = [] # new coordinate list
-
-        for vi, v in enumerate(top_verts):
-            # Corners are not smoothened
-            if is_corners[vi]:
-                new_coords.append(v.co)
-                continue
-
-            # Smoothing of other boundary vertices
-            if is_boundaries[vi]:
-                newco = new_boundary_co_from_verts(v, vi, top_verts, bnvis_of_vi)
-
-            # Smoothing of internal vertices
-            else:
-                if ug_props.extrusion_uses_face_based_smoothing:
-                    # Area weighted smoothing algorithm
-                    newco = new_internal_co_from_vert_area_weighted( \
-                        v, vi, top_verts, neighbour_vis_of_vi, \
-                        fils_of_neighbour_vis, fi_areas)
-                else:
-                    # Neighbour vertices smoothing algorith
-                    newco = new_internal_co_from_vert_neighbours( \
-                        v, vi, top_verts, anvis_of_vi)
-
-            if fulldebug:
-                l.debug("Propose move vertex %d " % v.index \
-                        + "from %s to %s" % (str(v.co), str(newco)))
-
-            # Limit by angle deviation
-            cfactor = get_convexity_factor(max_convexities[vi])
-            oldv = base_verts[vi]
-            if ug_props.extrusion_uses_smoothing_constraints:
-                newco, startco, endco = limit_co_by_angle_deviation( \
-                    newco, oldv, vdir[vi], cfactor)
-            new_coords.append(newco)
-
-        # Move vertices to new coordinates after all new positions
-        # have been calculated
-        for v, c in zip(top_verts, new_coords):
-            v.co = c
-
-
-        def quad_smooth_iter(base_verts, top_verts, anvis_of_vi, fis_of_vis, \
-                             top_faces, is_boundaries, max_convexities, vdir):
-            '''Quad smoothing iteration. Moves vertices with four edges towards a
-            weighted median point calculated from opposing neighbour
-            vertex locations. Opposing neighbour vertices are
-            neighbour vertices that don't share faces.
-            '''
-
-            def weight(length):
-                '''Calculate weight from length'''
-                w = 1.0 / (length + 0.01) # Added value smoothens the weight
-                return w * w
-
-            def get_opposing_vert_pairs(nvs, faces):
-                '''Return opposite quad vertex pairs in neighbour vertex list nvs and
-                neighbour faces list
-                '''
-                v1fs = [x for x in faces if x in nvs[0].link_faces]
-                v2fs = [x for x in faces if x in nvs[1].link_faces]
-                v3fs = [x for x in faces if x in nvs[2].link_faces]
-
-                if v1fs[0] not in v2fs and v1fs[1] not in v2fs:
-                    v1 = nvs[0]
-                    v2 = nvs[1]
-                    v3 = nvs[2]
-                    v4 = nvs[3]
-                elif v1fs[0] not in v3fs and v1fs[1] not in v3fs:
-                    v1 = nvs[0]
-                    v2 = nvs[2]
-                    v3 = nvs[1]
-                    v4 = nvs[3]
-                else:
-                    v1 = nvs[0]
-                    v2 = nvs[3]
-                    v3 = nvs[1]
-                    v4 = nvs[2]
-                return v1, v2, v3, v4
+        def get_target_co(v, speed, target_cos, cut_substeps, pvgm_target_co):
+            '''Calculate new target coordinates for vertex'''
 
             ug_props = bpy.context.scene.ug_props
-            # Under relaxation factor for orthogonality smoothing
-            sfac = ug_props.extrusion_quad_smoothing_factor
 
-            new_coords = [] # new coordinate list
-            for i, tv in enumerate(top_verts):
-                # Don't touch boundaries
-                if is_boundaries[i]:
-                    new_coords.append(tv.co)
-                    continue
-
-                # Neighbour vertices
-                nvs = [top_verts[x] for x in anvis_of_vi[i]]
-
-                # Only process quad verts
-                if len(nvs) != 4:
-                    new_coords.append(tv.co)
-                    continue
-
-                # Neighbour faces
-                neighfaces = [top_faces[x] for x in fis_of_vis[i]]
-                v1, v2, v3, v4 = get_opposing_vert_pairs(nvs, neighfaces)
-                vec12 = v2.co - v1.co
-                midpoint12 = (v1.co + v2.co) / 2.0
-                w12 = weight(vec12.length)
-
-                vec34 = v4.co - v3.co
-                midpoint34 = (v3.co + v4.co) / 2.0
-                w34 = weight(vec34.length)
-
-                newco = (w12 * midpoint12 + w34 * midpoint34) / (w12 + w34)
-
-                # Limit by angle deviation
-                cfactor = get_convexity_factor(max_convexities[vi])
-                if ug_props.extrusion_uses_smoothing_constraints:
-                    limitedco, dummy1, dummy2 = limit_co_by_angle_deviation( \
-                        newco, base_verts[i], vdir[i], cfactor, 0.1, 1.0)
-
-                # Add new coordinates
-                newco = tv.co + sfac * (limitedco - tv.co)
-                new_coords.append(newco)
-
-            # Set new coordinates
-            for v,newco in zip(top_verts, new_coords):
-                v.co = newco
-
-        # Carry out quad smoothing iteration
-        if ug_props.extrusion_uses_quad_smoothing:
-            for i in range(ug_props.extrusion_quad_smoothing_iterations):
-                quad_smooth_iter(base_verts, top_verts, anvis_of_vi, \
-                                 base_fis_of_vis, top_faces, is_boundaries, \
-                                 max_convexities, vdir)
-
-
-        def orthogonality_smooth_iter(base_verts, top_verts, anvis_of_vi, \
-                                      is_boundaries, max_convexities, vdir):
-            '''Orthogonality smoothing iteration. Vertices are moved along trajectory from
-            start vertex coordinates to end coordinates, to improve
-            orthogonality of top faces with extrusion direction.
-            '''
-
-            def weight(length):
-                '''Calculate weight from length'''
-                w = 1.0 / (length + 1.0)
+            def weight(x):
+                '''Calculate weight from argument'''
+                z = ug_props.extrusion_weight_smoothing_coefficient
+                w = 1.0 / (x + z)
                 return w * w
 
             from mathutils import Vector
-            ug_props = bpy.context.scene.ug_props
-            # Under relaxation factor for orthogonality smoothing
-            sfac = ug_props.extrusion_orthogonality_smoothing_factor
+            # Weight for projected geometric mean
+            pvgm_weight = weight(ug_props.extrusion_geometric_mean_factor)
+            weightsum = 0.0
+            target_co = Vector((0, 0, 0))
 
-            EPS = 1e-6 # minimum length fraction
-            new_coords = [] # new coordinate list
-            for i, tv in enumerate(top_verts):
-                # Don't touch boundaries
-                if is_boundaries[i]:
-                    new_coords.append(tv.co)
+            # Calculate target coordinate as weighted sum of target_cos..
+            for co, cs in zip(target_cos, cut_substeps):
+                w = weight(cs)
+                weightsum += w
+                target_co += co * w
+                if fulldebug:
+                    l.debug("Target co %s weight %f" % (str(co), w))
+
+            # ..and projected geometric mean
+            target_co += pvgm_target_co * pvgm_weight
+            weightsum += pvgm_weight
+            target_co /= weightsum
+            if fulldebug:
+                l.debug("pvgm co %s weight %f" % (str(pvgm_target_co), pvgm_weight))
+
+            # Limit the change of direction angle
+            newco = limit_co_by_angle_deviation(target_co, v, speed)
+
+            # Return target coordinates
+            return newco
+
+        def get_target_speed(v, target_co, min_velocity, is_above_cos, \
+                             target_cos, cut_substeps):
+            '''Calculate target speed'''
+            ug_props = bpy.context.scene.ug_props
+            # Speed factor for convex vertices
+            convex_speed_fac = ug_props.extrusion_convex_speed_factor
+            target_speeds = []
+
+            for i, co, cs in zip(is_above_cos, target_cos, cut_substeps):
+                # Set minimum velocity for targets below normal plane
+                if not i:
+                    target_speeds.append(min_velocity)
                     continue
 
-                # Get start and end points from angle deviation
-                cfactor = get_convexity_factor(max_convexities[vi])
-                newco, startco, endco = limit_co_by_angle_deviation( \
-                    tv.co, base_verts[i], vdir[i], cfactor)
+                # Otherwise calculate speed such that target_co is
+                # reached in fraction of cut_substep
+                vec = co - v.co
+                dx = vec.length / cs
+                vel = max(convex_speed_fac * min_velocity, dx)
+                target_speeds.append(vel)
 
-                # Neighbour vertices
-                nvs = [top_verts[x] for x in anvis_of_vi[i]]
-                newco = Vector((0, 0, 0)) # Smoothened coordinates
-                totweight = 0.0 # total weight
+            velocity = max(target_speeds)
+            # TODO: Add min neighbour speed limitation
+            # TODO: Maybe include max_concavity factor to max speed?
 
-                for nv in nvs:
-                    # Vector from minimum coordinates to neighbour coordinates
-                    u = nv.co - startco
-                    # Normal direction from minimum to end coordinates
-                    n = endco - startco
+            # Avoid overshooting
+            vec = target_co - v.co
+            if vec.length > velocity: # TODO: Allow some overshooting?
+                velocity = vec.length
 
-                    # Handle special cases
-                    if n.length < EPS or u.length / n.length < EPS:
-                        w = weight(EPS)
-                        totweight += w
-                        newco += w * tv.co
-                        continue
-
-                    # Project u to normalized n
-                    m = n.normalized()
-                    cos_angle = u @ m
-                    q = cos_angle * m # u component aligned with n
-
-                    # Check for orthogonal projection
-                    if q.length < EPS:
-                        q = EPS * n
-                    # Check for negative projection
-                    if cos_angle < 0.0:
-                        q = EPS * n
-                    # Check for too large projection
-                    if q.length > n.length:
-                        q = Vector(n)
-
-                    # Orthogonal coordinates
-                    orco = startco + q
-                    # Weight factor calculated from distance
-                    w = weight(q.length)
-                    totweight += w
-                    # Add to smoothened coordinates
-                    newco += w * orco
-
-                # Normalize smoothened coordinates
-                newco /= totweight
-                # Add new coordinates
-                newco = tv.co + sfac * (newco - tv.co)
-                new_coords.append(newco)
-
-            # Set new coordinates
-            for v,newco in zip(top_verts, new_coords):
-                v.co = newco
-
-        # Carry out orthogonality smoothing iteration
-        if ug_props.extrusion_uses_orthogonality_smoothing:
-            for i in range(ug_props.extrusion_orthogonality_smoothing_iterations):
-                orthogonality_smooth_iter(base_verts, top_verts, anvis_of_vi, \
-                                          is_boundaries, max_convexities, vdir)
+            if fulldebug: l.debug("final target_speed %f" % velocity)
+            return velocity * vec.normalized()
 
 
+        #######################################################
+        # Main Substep Loop of the Formation Flying Algorithm #
+        #######################################################
 
-    ###########################################
-    # Main vertex extension + smoothing loops #
-    ###########################################
+        # Calculate estimated_cos = estimate where vertices would be
+        # after this substep
+        estimated_cos = get_estimated_cos(top_verts, speeds)
 
+        new_speeds = [] # new speed vectors, to be calculated
+        for vi, v in enumerate(top_verts):
+            # Speed of boundary vertices are unchanged
+            if is_boundaries[vi]:
+                new_speeds.append(speeds[vi])
+                continue
+
+            # Calculate pvs = project neighbour vertices to direction normal plane
+            # Calculate pvspeeds = project neighbour speeds to direction normal plane
+            pvs, pvspeeds = project_pvs_pvspeeds(vi, top_verts, anvis_of_vi[vi], speeds)
+
+            # Calculate mid_cos = middle coordinates for all vpairs
+            # from estimated_cos
+            mid_cos = get_mid_cos(intvpairs0[vi], intvpairs1[vi], estimated_cos)
+
+            # Calculate target coordinates and boolean for coordinates
+            # locate above normal plane
+            is_above_cos, target_cos = \
+                get_target_cos(top_verts[vi], speeds[vi], mid_cos)
+
+            # Calculate substeps until vpairs intersect
+            vimap = {} # Map from vi index to anvis index
+            for i, x in enumerate(anvis_of_vi[vi]):
+                vimap[x] = i
+            cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
+
+            # Calculate projected geometric mean target coordinates
+            min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+            speed = min_velocity * speeds[vi].normalized()
+            pvgm_target_co = get_pvgm_target_co(speed, pvs, pvspeeds)
+
+            # Calculate target coordinates
+            target_co = get_target_co(top_verts[vi], speed, target_cos, cut_substeps, pvgm_target_co)
+            if fulldebug: l.debug("target_co %s" % str(target_co))
+
+            # Calculate target speed
+            speed = get_target_speed(top_verts[vi], target_co, min_velocity, \
+                                     is_above_cos, target_cos, cut_substeps)
+            new_speeds.append(speed)
+
+        # Evolve vertex positions and return new speeds
+        for v, s in zip(top_verts, new_speeds):
+            v.co += s
+        return new_speeds
+
+    # Call the extrusion substep in loop
     ug_props = bpy.context.scene.ug_props
-    if not ug_props.extrusion_uses_fixed_initial_directions and \
-        ug_props.extrusion_smoothing_iterations > 0:
-
-        # Run smoothing rounds for first substep
-        for i in range(ug_props.extrusion_smoothing_iterations):
-            fi_areas = calculate_face_areas(top_faces)
-            smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
-                           base_faces, neighbour_vis_of_vi, \
-                           fils_of_neighbour_vis, fi_areas, \
-                           bnvis_of_vi, base_fis_of_vis, \
-                           max_convexities, anvis_of_vi)
-
-        # Carry out the rest of substeps (extend + smoothings)
-        for j in range(ug_props.extrusion_substeps - 1):
-            fi_areas = calculate_face_areas(top_faces)
-            area_coeffs = calculate_mean_vertex_area_change( \
-                fi_areas, initial_face_areas, base_fis_of_vis)
-            elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
-            extend_verts(top_verts, base_verts, elens)
-
-            for i in range(ug_props.extrusion_smoothing_iterations):
-                fi_areas = calculate_face_areas(top_faces)
-                smoothen_verts(bm, vdir, top_verts, base_verts, top_faces, \
-                               base_faces, neighbour_vis_of_vi, \
-                               fils_of_neighbour_vis, fi_areas, \
-                               bnvis_of_vi, base_fis_of_vis, \
-                               max_convexities, anvis_of_vi)
+    if not ug_props.extrusion_uses_fixed_initial_directions:
+        # Carry out substeps
+        for j in range(ug_props.extrusion_substeps):
+            speeds = evolve_substep(bm, top_verts, speeds, \
+                                    is_boundaries, anvis_of_vi, \
+                                    intvpairs0, intvpairs1)
 
 
     def add_base_face_to_cells(faces, ugci0):
@@ -1284,4 +1263,4 @@ def extrude_cells(bm, initial_faces, vdir, new_ugfaces, initial_face_areas):
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
 
-    return bm, len(base_faces), vdir, new_ugfaces
+    return bm, len(base_faces), speeds, new_ugfaces
