@@ -25,7 +25,8 @@ from . import ug
 from . import ug_op
 import logging
 l = logging.getLogger(__name__)
-fulldebug = False # Set to True if you wanna see walls of logging debug
+fulldebug = True # Set to True if you wanna see walls of logging debug
+LARGE = 100.0 # Cut-off for large values for weight function
 
 # Summary of extrusion method: Extrusion starts from selected mesh
 # faces (base faces). Each face produces one new cell (in matching
@@ -922,7 +923,7 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
     ########################################
 
     def evolve_substep(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
-                       intvpairs0, intvpairs1):
+                       intvpairs0, intvpairs1, top_faces, fis_of_vis):
         '''Evolve extrusion by one substep'''
 
         # Help functions
@@ -967,51 +968,39 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
             return pvs, pvspeeds
 
-        def get_mid_cos(vpairs0, vpairs1, estimated_cos):
-            '''Calculate middle coordinates for all vpairs'''
-            mid_cos = []
+        def is_above_planes(vco, faces, co):
+            '''Return True if co is located "above" (=on the normal direction
+            side) of all faces, all of which connect at
+            coordinates vco. Otherwise return False.
+            '''
+            u = co - vco
+            u.normalize()
+            test = True
+            for f in faces:
+                if (u @ f.normal) <= 0.0:
+                    test = False
+            return test
+
+        def get_mid_cos(v, vi, vpairs0, vpairs1, estimated_cos, faces):
+            '''Calculate middle coordinates for all vpairs and boolean for that
+            coordinate being above top faces
+            '''
+            mid_cos = [] # Middle coordinates
+            is_aboves = [] # Booleans for above planes
+            vplengths = [] # Distances between vpairs
             for v0, v1 in zip(vpairs0, vpairs1):
                 co = (estimated_cos[v0] + estimated_cos[v1]) / 2.0
                 mid_cos.append(co)
-            return mid_cos
-
-        def get_target_cos(cv, speed, mid_cos):
-            '''First return value is is_above_cos = True if mid_co is located
-            above direction normal plane, otherwise False (for each
-            mid_co). Second return value is target_cos = mid_cos if
-            above normal plane, otherwise mid_co is projected speed
-            length above direction normal plane.
-            '''
-            cvdir = speed.normalized() # center vertex normal vector
-            is_above_cos = [] # Booleans for co being located above normal plane
-            target_cos = [] # Target coordinates
-
-            for co in mid_cos:
-                # Project coordinates
-                u = co - cv.co # vector from center vertex to neighbour vertex
-                unorm = u.normalized()
-                cos_angle = unorm @ cvdir
-
-                # co is above normal plane
-                if cos_angle > 0.0:
-                    is_above_cos.append(True)
-                    target_cos.append(co)
-                    continue
-
-                # co is below normal plane
-                is_above_cos.append(False)
-                q = (u @ cvdir) * cvdir # u component aligned with cvdir
-                p = u - q # u component normal to cvdir
-                newco = cv.co + p + speed
-                target_cos.append(newco)
-            return is_above_cos, target_cos
+                is_aboves.append(is_above_planes(v.co, faces, co))
+                vec = estimated_cos[v1] - estimated_cos[v0]
+                vplengths.append(vec.length)
+            return mid_cos, is_aboves, vplengths
 
         def get_cut_substeps(vpairs0, vpairs1, vimap, pvs, pvspeeds):
             '''Calculate how many substeps it would take for intersection to
             happen for each neighbour vertex pair if neighbours
             continued with their current pspeeds
             '''
-            LARGE = 100.0 # Cut-off for large values
             cut_substeps = [] # estimated substeps until intersection
 
             # Process each vertex pair
@@ -1041,18 +1030,34 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                     cut_substeps.append(cut_step)
             return cut_substeps
 
-        def get_pvgm_target_co(speed, pvs, pvspeeds):
-            '''Calculate projected geometric mean from vertex neighbours'
-            projected locations and speeds. Target coordinate is
-            projected up from center vertex normal plane according to
-            speed.
+        def project_co_above_planes(v, co, faces, speed):
+            '''Project coordinates co above faces, all of which connect at vertex
+            v, by length speed
             '''
+            for f in faces:
+                u = co - v.co
+                unorm = u.normalized()
+                cos_angle = unorm @ f.normal
+                if cos_angle < 0.0:
+                    q = (u @ f.normal) * f.normal # u component aligned with f.normal
+                    co -= q
+            co += speed
+            return co
+
+        def get_pvgm_target_co(vi, top_verts, min_speed, anvis, speeds, faces):
+            '''Calculate geometric mean from vertex neighbours' locations and
+            speeds. Target coordinate is projected up from planes
+            according to speed.
+            '''
+            cv = top_verts[vi]
             from mathutils import Vector
             co = Vector((0, 0, 0))
-            for vco, s in zip(pvs, pvspeeds):
-                co += vco + s
-            co /= float(len(pvs))
-            return co + speed
+            for i in anvis:
+                v = top_verts[i]
+                s = speeds[i]
+                co += v.co + s
+            co /= float(len(anvis))
+            return (project_co_above_planes(cv, co, faces, min_speed))
 
         def limit_co_by_angle_deviation(co, v, speed):
             '''Limit smoothened coordinates co by angle deviation.
@@ -1089,7 +1094,8 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             # New coordinates
             return v.co + u
 
-        def get_target_co(v, speed, target_cos, cut_substeps, pvgm_target_co):
+        def get_target_co(v, speed, is_aboves, target_cos, \
+                          cut_substeps, pvgm_target_co):
             '''Calculate new target coordinates for vertex'''
 
             ug_props = bpy.context.scene.ug_props
@@ -1102,19 +1108,33 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
             from mathutils import Vector
             # Weight for projected geometric mean
-            pvgm_weight = weight(ug_props.extrusion_geometric_mean_factor)
+            gmf = ug_props.extrusion_geometric_mean_factor
+            pvgm_weight = weight(gmf)
+            # Minimum weight for convex targets
+            csf = ug_props.extrusion_convex_speed_factor
+            min_convex_weight = weight(gmf/csf)
+
             weightsum = 0.0
             target_co = Vector((0, 0, 0))
 
-            # Calculate target coordinate as weighted sum of target_cos..
-            for co, cs in zip(target_cos, cut_substeps):
-                w = weight(cs)
+            # Calculate target coordinate as weighted sum of target_cos
+            for ia, co, cs in zip(is_aboves, target_cos, cut_substeps):
+                # If coordinates are not above surfaces, set weight to zero
+                if not ia:
+                    w = 0.0
+                else:
+                    w = weight(cs)
+
+                # Ensure convex targets are weighted strongly
+                if ia and w < min_convex_weight:
+                    w = min_convex_weight
+
                 weightsum += w
                 target_co += co * w
                 if fulldebug:
                     l.debug("Target co %s weight %f" % (str(co), w))
 
-            # ..and projected geometric mean
+            # Add projected geometric mean to target coordinate
             target_co += pvgm_target_co * pvgm_weight
             weightsum += pvgm_weight
             target_co /= weightsum
@@ -1127,17 +1147,15 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             # Return target coordinates
             return newco
 
-        def get_target_speed(v, target_co, min_velocity, is_above_cos, \
-                             target_cos, cut_substeps):
-            '''Calculate target speed'''
-            ug_props = bpy.context.scene.ug_props
-            # Speed factor for convex vertices
-            convex_speed_fac = ug_props.extrusion_convex_speed_factor
+        def get_target_speed_from_ivpairs(v, csf, is_aboves, target_cos, \
+                                          cut_substeps, min_neighbour_vel, \
+                                          vplengths):
+            '''Calculate target speed from ivpairs and related data'''
             target_speeds = []
-
-            for i, co, cs in zip(is_above_cos, target_cos, cut_substeps):
+            maxcl = max(vplengths) # Maximum encountered length between vpairs
+            for ia, co, cs, cl in zip(is_aboves, target_cos, cut_substeps, vplengths):
                 # Set minimum velocity for targets below normal plane
-                if not i:
+                if not ia:
                     target_speeds.append(min_velocity)
                     continue
 
@@ -1145,21 +1163,49 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                 # reached in fraction of cut_substep
                 vec = co - v.co
                 dx = vec.length / cs
-                vel = max(convex_speed_fac * min_velocity, dx)
+                # Maximum speed TODO: Check
+                vel = max(csf * min_velocity * maxcl / cl, dx)
                 target_speeds.append(vel)
 
             velocity = max(target_speeds)
-            # TODO: Add min neighbour speed limitation
+
+            # Limit speed by minimum neighbour velocity. TODO: csf OK here?
+            velocity = min(velocity, csf * min_neighbour_vel)
+
             # TODO: Maybe include max_concavity factor to max speed?
+            return velocity
 
-            # Avoid overshooting
-            vec = target_co - v.co
-            if vec.length > velocity: # TODO: Allow some overshooting?
+        def get_target_speed(v, target_co, min_velocity, is_aboves, \
+                             target_cos, cut_substeps, min_neighbour_vel, \
+                             vplengths):
+            '''Calculate target speed'''
+            ug_props = bpy.context.scene.ug_props
+            # Speed factor for convex vertices
+            csf = ug_props.extrusion_convex_speed_factor
+
+            # Special case: Three edges from v -> no ivpairs
+            if len(is_aboves) == 0:
+                vec = target_co - v.co
                 velocity = vec.length
+            # Otherwise ivpairs data exists, get velocity from there
+            else:
+                velocity = get_target_speed_from_ivpairs\
+                           (v, csf, is_aboves, target_cos, cut_substeps, \
+                            min_neighbour_vel, vplengths)
 
-            if fulldebug: l.debug("final target_speed %f" % velocity)
+                # Avoid overshooting
+                vec = target_co - v.co
+                if velocity > vec.length: # TODO: Allow some overshooting?
+                    velocity = vec.length
+
+            if fulldebug:
+                l.debug("final velocity %f, mnv %f" % (velocity, min_neighbour_vel))
             return velocity * vec.normalized()
 
+        def get_min_neighbour_vel(speeds, anvis_of_vi):
+            '''Calculate minimum neighbour velocity'''
+            vels = [x.length for x in get_items_from_list(speeds, anvis_of_vi)]
+            return min(vels)
 
         #######################################################
         # Main Substep Loop of the Formation Flying Algorithm #
@@ -1171,42 +1217,53 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
         new_speeds = [] # new speed vectors, to be calculated
         for vi, v in enumerate(top_verts):
-            # Speed of boundary vertices are unchanged
+            # Speed of boundary vertices are not changed
             if is_boundaries[vi]:
                 new_speeds.append(speeds[vi])
                 continue
+
+            if fulldebug:
+                l.debug("Starting on internal vi %d index %d" % (vi, v.index))
+
+            # List of faces surrounding this vertex
+            vfaces = [top_faces[x] for x in fis_of_vis[vi]]
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
             pvs, pvspeeds = project_pvs_pvspeeds(vi, top_verts, anvis_of_vi[vi], speeds)
 
             # Calculate mid_cos = middle coordinates for all vpairs
-            # from estimated_cos
-            mid_cos = get_mid_cos(intvpairs0[vi], intvpairs1[vi], estimated_cos)
-
-            # Calculate target coordinates and boolean for coordinates
-            # locate above normal plane
-            is_above_cos, target_cos = \
-                get_target_cos(top_verts[vi], speeds[vi], mid_cos)
+            # from estimated_cos, is_aboves = booleans for good target
+            # coordinates, and vplengths = lengths between vpairs.
+            target_cos, is_aboves, vplengths = \
+                get_mid_cos(v, vi, intvpairs0[vi], intvpairs1[vi], estimated_cos, vfaces)
 
             # Calculate substeps until vpairs intersect
             vimap = {} # Map from vi index to anvis index
             for i, x in enumerate(anvis_of_vi[vi]):
                 vimap[x] = i
             cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
+            if fulldebug:
+                l.debug("is_aboves %s" % str(is_aboves))
+                l.debug("target_cos %s" % str(target_cos))
+                l.debug("cut_substeps %s" % str(cut_substeps))
 
             # Calculate projected geometric mean target coordinates
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
-            speed = min_velocity * speeds[vi].normalized()
-            pvgm_target_co = get_pvgm_target_co(speed, pvs, pvspeeds)
+            min_speed = min_velocity * speeds[vi].normalized()
+            pvgm_target_co = get_pvgm_target_co(vi, top_verts, min_speed, \
+                                                anvis_of_vi[vi], speeds, vfaces)
 
             # Calculate target coordinates
-            target_co = get_target_co(top_verts[vi], speed, target_cos, cut_substeps, pvgm_target_co)
+            target_co = get_target_co(top_verts[vi], min_speed, is_aboves, \
+                                      target_cos, cut_substeps, pvgm_target_co)
             if fulldebug: l.debug("target_co %s" % str(target_co))
 
             # Calculate target speed
+            min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])
             speed = get_target_speed(top_verts[vi], target_co, min_velocity, \
-                                     is_above_cos, target_cos, cut_substeps)
+                                     is_aboves, target_cos, cut_substeps, \
+                                     min_neighbour_vel, vplengths)
             new_speeds.append(speed)
 
         # Evolve vertex positions and return new speeds
@@ -1219,9 +1276,11 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
     if not ug_props.extrusion_uses_fixed_initial_directions:
         # Carry out substeps
         for j in range(ug_props.extrusion_substeps):
+            if fulldebug: l.debug("Extrusion substep %d" % j)
             speeds = evolve_substep(bm, top_verts, speeds, \
                                     is_boundaries, anvis_of_vi, \
-                                    intvpairs0, intvpairs1)
+                                    intvpairs0, intvpairs1, \
+                                    top_faces, base_fis_of_vis)
 
 
     def add_base_face_to_cells(faces, ugci0):
