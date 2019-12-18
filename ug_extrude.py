@@ -41,6 +41,8 @@ LARGE = 100.0 # Cut-off for large values for weight function
 # - don't create internal faces into mesh
 # - don't create top faces into mesh until last layer
 
+# Other TODO ideas:
+# - generate trajectory lines to another object?
 
 class UG_OT_ExtrudeCells(bpy.types.Operator):
     '''Extrude new cells from current face selection'''
@@ -1094,9 +1096,8 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             # New coordinates
             return v.co + u
 
-        def get_target_co(v, speed, is_aboves, target_cos, \
-                          cut_substeps, pvgm_target_co):
-            '''Calculate new target coordinates for vertex'''
+        def get_weights(is_aboves, cut_substeps, pvgm_target_co):
+            '''Calculate weights for target coordinates'''
 
             ug_props = bpy.context.scene.ug_props
 
@@ -1106,106 +1107,95 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                 w = 1.0 / (x + z)
                 return w * w
 
-            from mathutils import Vector
-            # Weight for projected geometric mean
+            # Minimum weight for convex targets is weight for
+            # projected geometric mean divided by convex speed factor
             gmf = ug_props.extrusion_geometric_mean_factor
-            pvgm_weight = weight(gmf)
-            # Minimum weight for convex targets
             csf = ug_props.extrusion_convex_speed_factor
-            min_convex_weight = weight(gmf/csf)
+            min_convex_weight = weight(gmf / csf)
 
-            weightsum = 0.0
-            target_co = Vector((0, 0, 0))
-
-            # Calculate target coordinate as weighted sum of target_cos
-            for ia, co, cs in zip(is_aboves, target_cos, cut_substeps):
+            weights = []
+            for ia, cs in zip(is_aboves, cut_substeps):
                 # If coordinates are not above surfaces, set weight to zero
                 if not ia:
                     w = 0.0
+                # Otherwise, calculate weight from cut substeps or
+                # minimum convex weight
                 else:
-                    w = weight(cs)
+                    w = max(weight(cs), min_convex_weight)
+                weights.append(w)
 
-                # Ensure convex targets are weighted strongly
-                if ia and w < min_convex_weight:
-                    w = min_convex_weight
+            # Append geometric mean weight to end
+            weights.append(weight(gmf))
+            return weights
 
-                weightsum += w
-                target_co += co * w
-                if fulldebug:
-                    l.debug("Target co %s weight %f" % (str(co), w))
+        def get_speeds(v, target_cos, is_aboves, cut_substeps, pvgm_target_co, min_velocity):
+            '''Calculate target speeds for target_cos'''
 
-            # Add projected geometric mean to target coordinate
-            target_co += pvgm_target_co * pvgm_weight
-            weightsum += pvgm_weight
-            target_co /= weightsum
-            if fulldebug:
-                l.debug("pvgm co %s weight %f" % (str(pvgm_target_co), pvgm_weight))
-
-            # Limit the change of direction angle
-            newco = limit_co_by_angle_deviation(target_co, v, speed)
-
-            # Return target coordinates
-            return newco
-
-        def get_target_speed_from_ivpairs(v, csf, is_aboves, target_cos, \
-                                          cut_substeps, min_neighbour_vel, \
-                                          vplengths):
-            '''Calculate target speed from ivpairs and related data'''
-            target_speeds = []
-            maxcl = max(vplengths) # Maximum encountered length between vpairs
-            for ia, co, cs, cl in zip(is_aboves, target_cos, cut_substeps, vplengths):
-                # Set minimum velocity for targets below normal plane
-                if not ia:
-                    target_speeds.append(min_velocity)
-                    continue
-
-                # Otherwise calculate speed such that target_co is
-                # reached in fraction of cut_substep
-                vec = co - v.co
-                dx = vec.length / cs
-                # Maximum speed TODO: Check
-                vel = max(csf * min_velocity * maxcl / cl, dx)
-                target_speeds.append(vel)
-
-            velocity = max(target_speeds)
-
-            # Limit speed by minimum neighbour velocity. TODO: csf OK here?
-            velocity = min(velocity, csf * min_neighbour_vel)
-
-            # TODO: Maybe include max_concavity factor to max speed?
-            return velocity
-
-        def get_target_speed(v, target_co, min_velocity, is_aboves, \
-                             target_cos, cut_substeps, min_neighbour_vel, \
-                             vplengths):
-            '''Calculate target speed'''
+            from mathutils import Vector
             ug_props = bpy.context.scene.ug_props
             # Speed factor for convex vertices
             csf = ug_props.extrusion_convex_speed_factor
 
-            # Special case: Three edges from v -> no ivpairs
-            if len(is_aboves) == 0:
-                vec = target_co - v.co
-                velocity = vec.length
-            # Otherwise ivpairs data exists, get velocity from there
-            else:
-                velocity = get_target_speed_from_ivpairs\
-                           (v, csf, is_aboves, target_cos, cut_substeps, \
-                            min_neighbour_vel, vplengths)
+            speeds = []
+            # Otherwise ivpairs data exists, get velocity
+            if len(is_aboves) > 0:
+                for co, ia, cs in zip(target_cos, is_aboves, cut_substeps):
+                    # If coordinates are not above surfaces, set speed to zero
+                    if not ia:
+                        speeds.append(Vector((0, 0, 0)))
+                        continue
 
-                # Avoid overshooting
-                vec = target_co - v.co
-                if velocity > vec.length: # TODO: Allow some overshooting?
-                    velocity = vec.length
+                    # Otherwise calculate velocity such that target_co
+                    # is reached in fraction of cut_substep, but
+                    # always at least with minimum convex velocity.
+                    vec = co - v.co
+                    vel = max(vec.length / cs, min_velocity * csf)
 
-            if fulldebug:
-                l.debug("final velocity %f, mnv %f" % (velocity, min_neighbour_vel))
-            return velocity * vec.normalized()
+                    # TODO: Maybe include max_concavity factor?
+
+                    # Avoid overshooting
+                    if vel > vec.length: # TODO: Allow some overshooting?
+                        vel = vec.length
+                    speeds.append(vel * vec.normalized())
+
+            # Append geometric mean coordinate vector to end
+            pvgm_vec = pvgm_target_co - v.co
+            speeds.append(pvgm_vec)
+
+            return speeds
 
         def get_min_neighbour_vel(speeds, anvis_of_vi):
             '''Calculate minimum neighbour velocity'''
             vels = [x.length for x in get_items_from_list(speeds, anvis_of_vi)]
             return min(vels)
+
+        def get_target_speed(oldv, oldspeed, target_speeds, weights, min_vel):
+            '''Calculate new speed vector from target_cos and
+            weights
+            '''
+            ug_props = bpy.context.scene.ug_props
+            from mathutils import Vector
+            target_speed = Vector((0, 0, 0))
+
+            # Calculate target speed
+            for s, w in zip(target_speeds, weights):
+                target_speed += s * w
+            target_speed /= sum(weights)
+
+            # Limit the change of direction angle, adjust speed
+            limited_co = limit_co_by_angle_deviation\
+                         (oldv.co + target_speed, oldv, oldspeed)
+            vec = limited_co - oldv.co
+            target_speed = (vec.length / target_speed.length) * vec
+
+            # Limit by minimum neighbour velocity. Allow exceeding
+            # minimum neighbour velocity by factor.
+            csf = ug_props.extrusion_convex_speed_factor
+            if target_speed.length > (csf * min_vel):
+                target_speed = (csf * min_vel) * vec.normalized()
+
+            return target_speed
+
 
         #######################################################
         # Main Substep Loop of the Formation Flying Algorithm #
@@ -1243,10 +1233,6 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             for i, x in enumerate(anvis_of_vi[vi]):
                 vimap[x] = i
             cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
-            if fulldebug:
-                l.debug("is_aboves %s" % str(is_aboves))
-                l.debug("target_cos %s" % str(target_cos))
-                l.debug("cut_substeps %s" % str(cut_substeps))
 
             # Calculate projected geometric mean target coordinates
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
@@ -1254,17 +1240,29 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             pvgm_target_co = get_pvgm_target_co(vi, top_verts, min_speed, \
                                                 anvis_of_vi[vi], speeds, vfaces)
 
-            # Calculate target coordinates
-            target_co = get_target_co(top_verts[vi], min_speed, is_aboves, \
-                                      target_cos, cut_substeps, pvgm_target_co)
-            if fulldebug: l.debug("target_co %s" % str(target_co))
+            # Calculate weights for target_cos + geometric mean
+            weights = get_weights(is_aboves, cut_substeps, pvgm_target_co)
 
-            # Calculate target speed
+            # Calculate target_speeds for target_cos + geometric mean
+            target_speeds = get_speeds(v, target_cos, is_aboves, cut_substeps, \
+                                       pvgm_target_co, min_velocity)
+            if fulldebug:
+                l.debug("is_aboves %s" % str(is_aboves))
+                l.debug("target_cos %s" % str(target_cos))
+                l.debug("cut_substeps %s" % str(cut_substeps))
+                l.debug("weights %s" % str(weights))
+                l.debug("target_speeds lengths %s" % str([x.length for x in target_speeds]))
+
+            # Calculate minimum neighbour velocity to limit speed
             min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])
-            speed = get_target_speed(top_verts[vi], target_co, min_velocity, \
-                                     is_aboves, target_cos, cut_substeps, \
-                                     min_neighbour_vel, vplengths)
-            new_speeds.append(speed)
+
+            # Calculate a new target speed vector for this vertex
+            target_speed = get_target_speed(v, speeds[vi], target_speeds, \
+                                            weights, min_neighbour_vel)
+            if fulldebug: l.debug("target_co %s " % str(v.co + target_speed) \
+                                  + "velocity %f" % target_speed.length)
+
+            new_speeds.append(target_speed)
 
         # Evolve vertex positions and return new speeds
         for v, s in zip(top_verts, new_speeds):
