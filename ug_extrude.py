@@ -41,9 +41,6 @@ LARGE = 100.0 # Cut-off for large values for weight function
 # - don't create internal faces into mesh
 # - don't create top faces into mesh until last layer
 
-# Other TODO ideas:
-# - generate trajectory lines to another object?
-
 class UG_OT_ExtrudeCells(bpy.types.Operator):
     '''Extrude new cells from current face selection'''
     bl_idname = "unstructured_grids.extrude_cells"
@@ -73,6 +70,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         ob = ug.get_ug_object()
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(ob.data)
+        bmt = bmesh.new() # Extrusion trajectory mesh
 
         # Save initial face areas (used for scaling extrusion length)
         initial_face_areas = \
@@ -82,12 +80,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         for i in range(ug_props.extrusion_layers):
             t0 = time.clock()
             if i == 0:
-                bm, nf, speeds, new_ugfaces = \
-                    extrude_cells(bm, initial_faces, speeds, \
+                bm, bmt, nf, speeds, new_ugfaces = \
+                    extrude_cells(bm, bmt, initial_faces, speeds, \
                                   new_ugfaces, initial_face_areas)
             else:
-                bm, nf, speeds, new_ugfaces = \
-                    extrude_cells(bm, [], speeds, \
+                bm, bmt, nf, speeds, new_ugfaces = \
+                    extrude_cells(bm, bmt, [], speeds, \
                                   new_ugfaces, initial_face_areas)
             t1 = time.clock()
             l.debug("Extruded layer %d, " % (i + 1) \
@@ -98,12 +96,34 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         bm.normal_update()
         bmesh.update_edit_mesh(mesh=ob.data)
         bm.free()
+        recreate_trajectory_object(bmt)
+        bmt.free()
         ug_op.set_faces_boundary_to_default(new_ugfaces)
         ug.update_ug_all_from_blender()
 
         self.report({'INFO'}, "Extruded %d new cells" % n)
         return {'FINISHED'}
 
+def recreate_trajectory_object(bm):
+    '''Replace trajectory object mesh with argument mesh'''
+
+    obname = "Extrusion Trajectory"
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Delete old object
+    if obname in bpy.data.objects:
+        bpy.data.objects[obname].select_set(True)
+        mesh = bpy.data.objects[obname].data
+        bpy.ops.object.delete()
+        bpy.data.meshes.remove(mesh)
+
+    # Create new object and add mesh
+    if len(bm.verts) > 0:
+        mesh_data = bpy.data.meshes.new(obname)
+        bm.to_mesh(mesh_data)
+        ob = bpy.data.objects.new(obname, mesh_data)
+        bpy.context.scene.collection.objects.link(ob)
+        bpy.context.view_layer.objects.active = bpy.data.objects[obname]
 
 def initialize_extrusion():
     '''Initialize UG data for extrusion. For a new unstructured grid,
@@ -178,7 +198,7 @@ def initialize_extrusion():
     return True, initial_faces
 
 
-def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
+def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_areas):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -242,6 +262,11 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
     base_verts, base_vis_of_fis, base_fis_of_vis, ibasevertmap = \
         get_verts_and_relations(base_faces)
+
+    # Populate initial verts to trajectory bmesh
+    if fulldebug and len(bmt.verts) == 0:
+        for v in base_verts:
+            bmt.verts.new(v.co)
 
 
     def get_edges_and_face_map(faces):
@@ -1276,6 +1301,20 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             v.co += s
         return new_speeds
 
+
+    def update_trajectory_mesh(bmt, verts):
+        '''Add top verts to trajectory mesh'''
+        bmt.verts.ensure_lookup_table()
+        bmt.verts.index_update()
+        nverts = len(verts)
+        nv0 = len(bmt.verts) - nverts
+        oldverts = [bmt.verts[x] for x in range(nv0, nv0 + nverts)]
+        for i,v in enumerate(top_verts):
+            nv = bmt.verts.new(v.co)
+            v0 = oldverts[i]
+            bmt.edges.new([v0, nv])
+        return bmt
+
     # Call the extrusion substep in loop
     ug_props = bpy.context.scene.ug_props
     if not ug_props.extrusion_uses_fixed_initial_directions:
@@ -1286,6 +1325,8 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                                     is_boundaries, anvis_of_vi, \
                                     intvpairs0, intvpairs1, \
                                     top_faces, base_fis_of_vis)
+            if fulldebug:
+                bmt = update_trajectory_mesh(bmt, top_verts)
 
 
     def add_base_face_to_cells(faces, ugci0):
@@ -1327,4 +1368,4 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
 
-    return bm, len(base_faces), speeds, new_ugfaces
+    return bm, bmt, len(base_faces), speeds, new_ugfaces
