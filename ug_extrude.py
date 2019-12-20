@@ -498,16 +498,16 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
 
 
-    def calculate_max_convexities(bm, verts, faces):
-        '''Calculate maximum convexities for verts.
+    def calculate_convexity_sums(bm, verts, faces):
+        '''Calculate sum of convexities for verts.
         Convexity is a measure of face-face angles:
         Convexity value near 0 means extremely sharp concave angle.
         Convexity value 0.25 means 90 degree concave angle.
         Convexity calue 0.5 means flat terrain (neither concave or convex).
         Convexity value 0.75 means 90 degree convex angle.
         Convexity value near 1 means extremely convex hole.
-        Maximum convexity is the largest convexity value calculated for
-        all faces surrounding each vertex.
+        Convexity sum is the sum of (convexity - 0.5) > 0 values
+        calculated for all convex edges surrounding each vertex.
         '''
 
         # Help geometry functions
@@ -593,10 +593,10 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
 
         # Calculate maximum convexities
-        max_convexities = []
+        convexity_sums = []
 
         for vi, v in enumerate(verts):
-            max_convexity = 0.0
+            convexity_sum = 0.0
             if fulldebug: l.debug("Vert %d:" % v.index)
             for e in v.link_edges:
                 efaces = [f for f in e.link_faces if f in faces]
@@ -620,16 +620,19 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                     else:
                         convexity = (-cos_epsilon + 1.0) / 4.0
                     if fulldebug: l.debug("  convexity = %f" % convexity)
-                    max_convexity = max(max_convexity, convexity)
-            max_convexities.append(max_convexity)
-        return max_convexities
+
+                    if convexity > 0.5:
+                        convexity_sum += (convexity - 0.5)
+            convexity_sums.append(convexity_sum)
+        return convexity_sums
 
     #max_convexities = len(base_verts) * [0.5]
     #EPS = 1e-4 # Small number for detection of non-zero value
     #if ug_props.extrusion_convexity_scale_factor > EPS or \
     #   ug_props.extrusion_uses_convexity_limitation:
-    #    max_convexities = calculate_max_convexities(bm, base_verts, base_faces)
 
+    #convexity_sums = calculate_convexity_sums(bm, base_verts, base_faces)
+    #l.debug("convexity_sums %s" % str(convexity_sums))
 
     def calculate_face_areas(faces):
         '''Calculate areas of faces'''
@@ -1128,7 +1131,7 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
             weights.append(weight(gmf))
             return weights
 
-        def get_speeds(v, target_cos, is_aboves, cut_substeps, pvgm_target_co, min_velocity):
+        def get_speeds(v, target_cos, is_aboves, cut_substeps, pvgm_target_co, min_velocity, convexity_sum):
             '''Calculate target speeds for target_cos'''
 
             from mathutils import Vector
@@ -1149,7 +1152,8 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
                     # is reached in fraction of cut_substep, but
                     # always at least with minimum convex velocity.
                     vec = co - v.co
-                    vel = max(vec.length / cs, min_velocity * csf)
+                    cfac = (1.2 + convexity_sum * 2.0) # TODO: Parametrize
+                    vel = max(vec.length / cs, min_velocity) * cfac
 
                     # TODO: Maybe include max_concavity factor?
 
@@ -1205,6 +1209,9 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
         # after this substep
         estimated_cos = get_estimated_cos(top_verts, speeds)
 
+        # Calculate convexity_sums = sum of convex edge convexity values per vertex
+        convexity_sums = calculate_convexity_sums(bm, top_verts, top_faces)
+
         new_speeds = [] # new speed vectors, to be calculated
         for vi, v in enumerate(top_verts):
             # Speed of boundary vertices are not changed
@@ -1245,7 +1252,7 @@ def extrude_cells(bm, initial_faces, speeds, new_ugfaces, initial_face_areas):
 
             # Calculate target_speeds for target_cos + geometric mean
             target_speeds = get_speeds(v, target_cos, is_aboves, cut_substeps, \
-                                       pvgm_target_co, min_velocity)
+                                       pvgm_target_co, min_velocity, convexity_sums[vi])
             if fulldebug:
                 l.debug("is_aboves %s" % str(is_aboves))
                 l.debug("target_cos %s" % str(target_cos))
