@@ -1011,17 +1011,22 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                     test = False
             return test
 
-        def get_mid_cos(v, vi, vpairs0, vpairs1, estimated_cos, faces):
+        def get_mid_cos(v, vi, vpairs0, vpairs1, estimated_cos, faces, pvgm_target_co):
             '''Calculate middle coordinates for all vpairs and boolean for that
             coordinate being above top faces
             '''
+            from mathutils import Vector
             mid_cos = [] # Middle coordinates
             is_aboves = [] # Booleans for above planes
             vplengths = [] # Distances between vpairs
             for v0, v1 in zip(vpairs0, vpairs1):
                 co = (estimated_cos[v0] + estimated_cos[v1]) / 2.0
+                is_above = is_above_planes(v.co, faces, co)
+                is_aboves.append(is_above)
+                # Use geometric mean coordinates if co is below planes
+                if not is_above:
+                    co = Vector(pvgm_target_co)
                 mid_cos.append(co)
-                is_aboves.append(is_above_planes(v.co, faces, co))
                 vec = estimated_cos[v1] - estimated_cos[v0]
                 vplengths.append(vec.length)
             return mid_cos, is_aboves, vplengths
@@ -1124,7 +1129,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # New coordinates
             return v.co + u
 
-        def get_weights(is_aboves, cut_substeps, pvgm_target_co):
+        def get_weights(is_aboves, cut_substeps, vplengths, pvgm_target_co):
             '''Calculate weights for target coordinates'''
 
             ug_props = bpy.context.scene.ug_props
@@ -1132,25 +1137,32 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             def weight(x):
                 '''Calculate weight from argument'''
                 z = ug_props.extrusion_weight_smoothing_coefficient
-                w = 1.0 / (x + z)
+                wmax = 1.0 / z # Normalisation factor
+                w = 1.0 / (x + z) / wmax
                 return w * w
 
             # Minimum weight for convex targets is weight for
             # projected geometric mean divided by convex speed factor
             gmf = ug_props.extrusion_geometric_mean_factor
             csf = ug_props.extrusion_convex_speed_factor
-            min_convex_weight = weight(gmf / csf)
 
             weights = []
-            for ia, cs in zip(is_aboves, cut_substeps):
-                # If coordinates are not above surfaces, set weight to zero
-                if not ia:
-                    w = 0.0
-                # Otherwise, calculate weight from cut substeps or
-                # minimum convex weight
-                else:
-                    w = max(weight(cs), min_convex_weight)
-                weights.append(w)
+            if len(is_aboves) > 0:
+                max_vplen = max(vplengths)
+                for ia, cs, vl in zip(is_aboves, cut_substeps, vplengths):
+                    # Weight option 1: Closeness of vpair
+                    vplen_fac = (1.0 + 10.0 * (vl / max_vplen)) # TODO: Parametrize
+                    wo1 = weight(vplen_fac)
+                    # Weight option 2: Value of cut substeps
+                    wo2 = weight(cs)
+                    # Weight option 3: Minimum convex weight
+                    wo3 = weight(gmf / csf)
+                    w = max(wo1, wo2, wo3)
+                    weights.append(w)
+                    if fulldebug:
+                        l.debug("vfrac %f " % (vl/max_vplen) + "wo1 %f " % wo1 \
+                                + "wo2 %f " % wo2 + "wo3 %f " % wo3 \
+                                + "w %f" % w)
 
             # Append geometric mean weight to end
             weights.append(weight(gmf))
@@ -1168,16 +1180,11 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # Otherwise ivpairs data exists, get velocity
             if len(is_aboves) > 0:
                 for co, ia, cs in zip(target_cos, is_aboves, cut_substeps):
-                    # If coordinates are not above surfaces, set speed to zero
-                    if not ia:
-                        speeds.append(Vector((0, 0, 0)))
-                        continue
-
-                    # Otherwise calculate velocity such that target_co
+                    # Calculate velocity such that target_co
                     # is reached in fraction of cut_substep, but
                     # always at least with minimum convex velocity.
                     vec = co - v.co
-                    cfac = (1.2 + convexity_sum * 2.0) # TODO: Parametrize
+                    cfac = (1.0 + convexity_sum * 2.0) # TODO: Parametrize
                     vel = max(vec.length / cs, min_velocity) * cfac
 
                     # TODO: Maybe include max_concavity factor?
@@ -1210,6 +1217,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             for s, w in zip(target_speeds, weights):
                 target_speed += s * w
             target_speed /= sum(weights)
+            # return target_speed # disable limitations, for debugging
 
             # Limit the change of direction angle, adjust speed
             limited_co = limit_co_by_angle_deviation\
@@ -1250,6 +1258,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # List of faces surrounding this vertex
             vfaces = [top_faces[x] for x in fis_of_vis[vi]]
 
+            # Calculate projected geometric mean target coordinates
+            min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+            min_speed = min_velocity * speeds[vi].normalized()
+            pvgm_target_co = get_pvgm_target_co(vi, top_verts, min_speed, \
+                                                anvis_of_vi[vi], speeds, vfaces)
+
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
             pvs, pvspeeds = project_pvs_pvspeeds(vi, top_verts, anvis_of_vi[vi], speeds)
@@ -1258,7 +1272,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # from estimated_cos, is_aboves = booleans for good target
             # coordinates, and vplengths = lengths between vpairs.
             target_cos, is_aboves, vplengths = \
-                get_mid_cos(v, vi, intvpairs0[vi], intvpairs1[vi], estimated_cos, vfaces)
+                get_mid_cos(v, vi, intvpairs0[vi], intvpairs1[vi], \
+                            estimated_cos, vfaces, pvgm_target_co)
 
             # Calculate substeps until vpairs intersect
             vimap = {} # Map from vi index to anvis index
@@ -1266,14 +1281,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 vimap[x] = i
             cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
 
-            # Calculate projected geometric mean target coordinates
-            min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
-            min_speed = min_velocity * speeds[vi].normalized()
-            pvgm_target_co = get_pvgm_target_co(vi, top_verts, min_speed, \
-                                                anvis_of_vi[vi], speeds, vfaces)
-
             # Calculate weights for target_cos + geometric mean
-            weights = get_weights(is_aboves, cut_substeps, pvgm_target_co)
+            weights = get_weights(is_aboves, cut_substeps, vplengths, pvgm_target_co)
 
             # Calculate target_speeds for target_cos + geometric mean
             target_speeds = get_speeds(v, target_cos, is_aboves, cut_substeps, \
