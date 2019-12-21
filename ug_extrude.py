@@ -1065,7 +1065,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                     cut_substeps.append(cut_step)
             return cut_substeps
 
-        def project_co_above_planes(v, co, faces, speed):
+        def project_co_above_planes(v, co, faces):
             '''Project coordinates co above faces, all of which connect at vertex
             v, by length speed
             '''
@@ -1076,10 +1076,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 if cos_angle < 0.0:
                     q = (u @ f.normal) * f.normal # u component aligned with f.normal
                     co -= q
-            co += speed
             return co
 
-        def get_pvgm_target_co(vi, top_verts, min_speed, anvis, speeds, faces):
+        def get_pvgm_target_co(vi, top_verts, anvis, speeds, faces):
             '''Calculate geometric mean from vertex neighbours' locations and
             speeds. Target coordinate is projected up from planes
             according to speed.
@@ -1092,7 +1091,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 s = speeds[i]
                 co += v.co + s
             co /= float(len(anvis))
-            return (project_co_above_planes(cv, co, faces, min_speed))
+            return (project_co_above_planes(cv, co, faces))
 
         def limit_co_by_angle_deviation(co, v, speed):
             '''Limit smoothened coordinates co by angle deviation.
@@ -1184,7 +1183,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                     # is reached in fraction of cut_substep, but
                     # always at least with minimum convex velocity.
                     vec = co - v.co
-                    cfac = (1.0 + convexity_sum * 2.0) # TODO: Parametrize
+                    cfac = (1.0 + convexity_sum * 4.0) # TODO: Parametrize
                     vel = max(vec.length / cs, min_velocity) * cfac
 
                     # TODO: Maybe include max_concavity factor?
@@ -1205,7 +1204,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             vels = [x.length for x in get_items_from_list(speeds, anvis_of_vi)]
             return min(vels)
 
-        def get_target_speed(oldv, oldspeed, target_speeds, weights, min_vel):
+        def get_target_speed(oldv, oldspeed, target_speeds, weights, \
+                             min_neighbour_vel, min_velocity):
             '''Calculate new speed vector from target_cos and
             weights
             '''
@@ -1217,19 +1217,26 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             for s, w in zip(target_speeds, weights):
                 target_speed += s * w
             target_speed /= sum(weights)
-            # return target_speed # disable limitations, for debugging
 
-            # Limit the change of direction angle, adjust speed
+            # Ensure minimum velocity
+            if target_speed.length < min_velocity:
+                target_speed.normalize()
+                target_speed *= min_velocity
+
+            #return target_speed # disable limitations, for debugging
+
+            # Limit the change of direction angle. Retain velocity.
+            vel = target_speed.length
             limited_co = limit_co_by_angle_deviation\
                          (oldv.co + target_speed, oldv, oldspeed)
             vec = limited_co - oldv.co
-            target_speed = (vec.length / target_speed.length) * vec
+            target_speed = vel * vec.normalized()
 
             # Limit by minimum neighbour velocity. Allow exceeding
             # minimum neighbour velocity by factor.
             csf = ug_props.extrusion_convex_speed_factor
-            if target_speed.length > (csf * min_vel):
-                target_speed = (csf * min_vel) * vec.normalized()
+            if target_speed.length > (csf * min_neighbour_vel):
+                target_speed = (csf * min_neighbour_vel) * vec.normalized()
 
             return target_speed
 
@@ -1261,8 +1268,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # Calculate projected geometric mean target coordinates
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
             min_speed = min_velocity * speeds[vi].normalized()
-            pvgm_target_co = get_pvgm_target_co(vi, top_verts, min_speed, \
-                                                anvis_of_vi[vi], speeds, vfaces)
+            pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
+                                                speeds, vfaces)
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
@@ -1299,7 +1306,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             # Calculate a new target speed vector for this vertex
             target_speed = get_target_speed(v, speeds[vi], target_speeds, \
-                                            weights, min_neighbour_vel)
+                                            weights, min_neighbour_vel, \
+                                            min_velocity)
             if fulldebug: l.debug("target_co %s " % str(v.co + target_speed) \
                                   + "velocity %f" % target_speed.length)
 
