@@ -481,8 +481,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
         return res
 
 
-    def calculate_initial_speeds(speeds, verts, faces, fis_of_vis):
-        '''Calculate initial extrusion direction vectors by averaging face
+    def get_vertex_normal_speeds(speeds, verts, faces, fis_of_vis):
+        '''Calculate vertex normal speeds by averaging face
         normals surrounding each vertex, weighted by face vertex angle
         (the angle between the two edges of the face connected at vertex).
         '''
@@ -520,7 +520,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
         return speeds
 
-    speeds = calculate_initial_speeds(speeds, base_verts, base_faces, \
+    speeds = get_vertex_normal_speeds(speeds, base_verts, base_faces, \
                                       base_fis_of_vis)
 
 
@@ -1126,7 +1126,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # New coordinates
             return v.co + u
 
-        def get_weights(is_aboves, cut_substeps, vplengths, pvgm_target_co):
+        def get_weights(is_aboves, cut_substeps, vplengths, \
+                        pvgm_target_co, convexity_sum):
             '''Calculate weights for target coordinates. Weights are used to
             calculate a target coordinate and speed.
             '''
@@ -1162,10 +1163,15 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             # Append geometric mean weight to end
             weights.append(weight(gmf))
+
+            # Append vertex normal weight to end
+            vnw = 1.0 + convexity_sum * 10.0 # TODO: Parametrize
+            weights.append(weight(vnw))
+
             return weights
 
         def get_speeds(v, target_cos, is_aboves, cut_substeps, pvgm_target_co, \
-                       min_velocity, convexity_sum):
+                       min_velocity, convexity_sum, vnspeed):
             '''Calculate target speeds for target_cos'''
 
             from mathutils import Vector
@@ -1194,6 +1200,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # Append geometric mean coordinate vector to end
             pvgm_vec = pvgm_target_co - v.co
             speeds.append(pvgm_vec)
+
+            # Append vertex normal speed to end
+            speeds.append(vnspeed)
 
             return speeds
 
@@ -1230,11 +1239,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             vec = limited_co - oldv.co
             target_speed = vel * vec.normalized()
 
-            # Limit by minimum neighbour velocity. Allow exceeding
-            # minimum neighbour velocity by factor.
-            csf = ug_props.extrusion_convex_speed_factor
-            if target_speed.length > (csf * min_neighbour_vel):
-                target_speed = (csf * min_neighbour_vel) * vec.normalized()
+            # Limit by maximum allowed relative velocity among neighbours
+            mrv = ug_props.extrusion_max_relative_velocity
+            if target_speed.length > (mrv * min_neighbour_vel):
+                target_speed = (mrv * min_neighbour_vel) * vec.normalized()
 
             return target_speed
 
@@ -1242,6 +1250,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
         #######################################################
         # Main Substep Loop of the Formation Flying Algorithm #
         #######################################################
+
+        # Calculate vertex normal speeds
+        vnspeeds = get_vertex_normal_speeds(speeds, top_verts, top_faces, \
+                                            base_fis_of_vis)
 
         # Calculate estimated_cos = estimate where vertices would be
         # after this substep
@@ -1252,17 +1264,21 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
         new_speeds = [] # new speed vectors, to be calculated
         for vi, v in enumerate(top_verts):
-            # Speed of boundary vertices are not changed
-            # TODO: Restore corner handling and boundary interpolation
-            if is_boundaries[vi]:
+            # Speed of corner vertices are not changed
+            if is_corners[vi]:
                 new_speeds.append(speeds[vi])
+                continue
+
+            # List of faces surrounding this vertex
+            vfaces = [top_faces[x] for x in fis_of_vis[vi]]
+
+            # Boundary vertices use plain vertex normal speed
+            if is_boundaries[vi]:
+                new_speeds.append(vnspeeds[vi])
                 continue
 
             if fulldebug:
                 l.debug("Starting on internal vi %d index %d" % (vi, v.index))
-
-            # List of faces surrounding this vertex
-            vfaces = [top_faces[x] for x in fis_of_vis[vi]]
 
             # Calculate projected geometric mean target coordinates
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
@@ -1288,11 +1304,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
 
             # Calculate weights for target_cos + geometric mean
-            weights = get_weights(is_aboves, cut_substeps, vplengths, pvgm_target_co)
+            weights = get_weights(is_aboves, cut_substeps, vplengths, \
+                                  pvgm_target_co, convexity_sums[vi])
 
-            # Calculate target_speeds for target_cos + geometric mean
+            # Calculate target_speeds for target_cos + geometric mean + vertex normal
             target_speeds = get_speeds(v, target_cos, is_aboves, cut_substeps, \
-                                       pvgm_target_co, min_velocity, convexity_sums[vi])
+                                       pvgm_target_co, min_velocity, \
+                                       convexity_sums[vi], vnspeeds[vi])
 
             # Calculate minimum neighbour velocity to limit speed
             min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])

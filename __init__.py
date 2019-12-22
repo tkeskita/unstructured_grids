@@ -181,6 +181,12 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1.5,
         min=1.0, max=10.0
     )
+    extrusion_max_relative_velocity: bpy.props.FloatProperty(
+        name="Maximum Relative Velocity",
+        description="Maximum Relative Velocity Allowed for Neighbour Vertices",
+        default=2.0,
+        min=1.0, max=100.0
+    )
     facezone_selection: bpy.props.IntProperty(
         name="Face Zone Selection",
         description="Face Zone Order Number to Edit Face Orientations",
@@ -316,6 +322,8 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_geometric_mean_factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_convex_speed_factor")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_max_relative_velocity")
 
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
