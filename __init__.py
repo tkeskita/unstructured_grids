@@ -178,8 +178,8 @@ class UGProperties(bpy.types.PropertyGroup):
     extrusion_convex_speed_factor: bpy.props.FloatProperty(
         name="Convex Speed Factor",
         description="Extra Speed Factor for Convex Vertices",
-        default=1.5,
-        min=1.0, max=10.0
+        default=1.0,
+        min=0.0, max=10.0
     )
     extrusion_max_relative_velocity: bpy.props.FloatProperty(
         name="Maximum Relative Velocity",
