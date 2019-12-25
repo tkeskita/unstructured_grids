@@ -160,7 +160,7 @@ class UGProperties(bpy.types.PropertyGroup):
         name="Minimum cos(angle)",
         description="Minimum Allowed Cosine of Angle " \
         + "for Change of Directions",
-        default=0.7,
+        default=0.98,
         min=0.0, max=1.0
     )
     extrusion_weight_smoothing_coefficient: bpy.props.FloatProperty(
@@ -178,14 +178,19 @@ class UGProperties(bpy.types.PropertyGroup):
     extrusion_convex_speed_factor: bpy.props.FloatProperty(
         name="Convex Speed Factor",
         description="Extra Speed Factor for Convex Vertices",
-        default=1.0,
+        default=0.0,
         min=0.0, max=10.0
     )
     extrusion_max_relative_velocity: bpy.props.FloatProperty(
         name="Maximum Relative Velocity",
         description="Maximum Relative Velocity Allowed for Neighbour Vertices",
-        default=2.0,
-        min=1.0, max=100.0
+        default=1.1,
+        min=1.0, max=10.0
+    )
+    extrusion_create_trajectory_object: bpy.props.BoolProperty(
+        name="Create Trajectory Object",
+        description="Create Trajectory Object",
+        default=False,
     )
     facezone_selection: bpy.props.IntProperty(
         name="Face Zone Selection",
@@ -324,7 +329,8 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_convex_speed_factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_max_relative_velocity")
-
+            row = layout.row()
+            row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')
