@@ -1073,10 +1073,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                     cut_substeps.append(cut_step)
             return cut_substeps
 
-        def project_co_above_planes(v, co, faces):
+        def project_co_above_planes(v, co, faces, vnspeed):
             '''Project coordinates co above faces, all of which connect at vertex
-            v, by length speed
+            v, to above planes.
             '''
+
+            # Push co by each face normal at a time towards allowed space
             for f in faces:
                 u = co - v.co
                 unorm = u.normalized()
@@ -1084,10 +1086,24 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 if cos_angle < 0.0:
                     # u component aligned with f.normal
                     q = (u @ f.normal) * f.normal
-                    co -= q # TODO: Does this need extra factor like 1.05?
+                    # Use small extra length factor to push vertex above plane.
+                    co -= 1.1 * q
+
+            # Make second pass to check if moved co is still below
+            # some plane. That may happen for sharp concave verts, in
+            # which case use vertex normal as a failsafe.
+            for f in faces:
+                u = co - v.co
+                unorm = u.normalized()
+                cos_angle = unorm @ f.normal
+                if cos_angle < 0.0:
+                    return v.co + vnspeed
+            # Note: Alternative idea could maybe be to project co
+            # towards e.g. vertex normal until surface is hit. That
+            # would require ray casting, which is heavy.
             return co
 
-        def get_pvgm_target_co(vi, top_verts, anvis, speeds, faces):
+        def get_pvgm_target_co(vi, top_verts, anvis, speeds, faces, vnspeeds):
             '''Calculate geometric mean from vertex neighbours' locations and
             speeds. Target coordinate is projected up from planes.
             '''
@@ -1099,7 +1115,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 s = speeds[i]
                 co += v.co + s
             co /= float(len(anvis))
-            return (project_co_above_planes(cv, co, faces))
+            return (project_co_above_planes(cv, co, faces, vnspeeds[vi]))
 
         def limit_co_by_angle_deviation(co, v, speed):
             '''Limit coordinates co by angle deviation by moving
@@ -1310,7 +1326,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
             min_speed = min_velocity * speeds[vi].normalized()
             pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
-                                                speeds, vfaces)
+                                                speeds, vfaces, vnspeeds)
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
