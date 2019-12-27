@@ -41,6 +41,8 @@ LARGE = 100.0 # Cut-off for large values for weight function
 # - don't create internal faces into mesh
 # - don't create top faces into mesh until last layer
 
+# TODO: Autosplit twisted faces after some threshold?
+
 class UG_OT_ExtrudeCells(bpy.types.Operator):
     '''Extrude new cells from current face selection'''
     bl_idname = "unstructured_grids.extrude_cells"
@@ -1105,7 +1107,6 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             base vertex, and normal vector (vdir) is calculated from
             speed vector.
             '''
-
             from math import sqrt
             ug_props = bpy.context.scene.ug_props
 
@@ -1227,7 +1228,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             return min(vels)
 
         def get_target_speed(oldv, oldspeed, target_speeds, weights, \
-                             min_neighbour_vel, min_velocity, anv, convexity_sum):
+                             min_neighbour_vel, min_velocity, convexity_sum):
             '''Calculate new speed vector from target_cos and
             weights
             '''
@@ -1246,8 +1247,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             mrv = 1.0 + convexity_sum * 0.5 # TODO: Parametrize acceleration factor
             mrv *= ug_props.extrusion_max_relative_velocity
 
-            # Limit velocity change rate
+            # Use minimum velocity if this vertex is not convex
             vel = target_speed.length
+            EPS = 1e-4
+            if convexity_sum < EPS:
+                vel = min_velocity
+
+            # Limit velocity change rate
             oldvel = oldspeed.length
             vel = min(vel, oldvel * mrv) # Clamp upper limit
             vel = max(vel, oldvel / mrv * 0.5) # Clamp lower limit # TODO: Parametrize braking factor
@@ -1339,7 +1345,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # Calculate a new target speed vector for this vertex
             target_speed = get_target_speed(v, speeds[vi], target_speeds, \
                                             weights, min_neighbour_vel, \
-                                            min_velocity, pvgm_target_co, convexity_sums[vi])
+                                            min_velocity, convexity_sums[vi])
             if fulldebug:
                 l.debug("is_aboves %s" % str(is_aboves))
                 l.debug("target_cos %s" % str(target_cos))
