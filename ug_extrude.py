@@ -483,21 +483,18 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
         return res
 
 
-    def get_vertex_normal_speeds(oldspeeds, verts, faces, fis_of_vis):
+    def get_vertex_normal_speeds(verts, faces, fis_of_vis):
         '''Calculate vertex normal speeds by averaging face
         normals surrounding each vertex, weighted by face vertex angle
         (the angle between the two edges of the face connected at vertex).
         '''
 
         from mathutils import Vector
+        import math
         ug_props = bpy.context.scene.ug_props
 
         # Base extension length of a substep
         ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
-
-        # Do nothing if initial direction option is enabled
-        if len(oldspeeds) > 0 and ug_props.extrusion_uses_fixed_initial_directions:
-            return oldspeeds
 
         # Calculate new extrusion directions
         speeds = []
@@ -507,9 +504,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             # Calculate weight coefficients from face vertex angles
             for f in neigh_faces:
-                # Invert cos angle and make range from 0 to 2:
-                # TODO: Convert to angle, use that as weight?
-                angle_factor = (-1.0 * get_face_vertex_cos_angle(verts[vi], f)) + 1.0
+                # Convert cos_angle to angle. Scale to [0, 1] for weight factor.
+                cos_angle = get_face_vertex_cos_angle(verts[vi], f)
+                angle_factor = math.acos(cos_angle) / math.pi
                 angle_factors.append(angle_factor)
 
             # Calculate final speeds from normals and weights
@@ -519,16 +516,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 norvec += factor * nv
             norvec.normalize()
 
-            if len(oldspeeds) > 0:
-                ext_len = oldspeeds[vi].length
-
-            norvec *= ext_len # Set velocity
+            norvec *= ext_len # Set velocity to minimum velocity
             speeds.append(norvec)
 
         return speeds
 
     if len(speeds) == 0:
-        speeds = get_vertex_normal_speeds(speeds, base_verts, base_faces, \
+        speeds = get_vertex_normal_speeds(base_verts, base_faces, \
                                           base_fis_of_vis)
 
 
@@ -973,21 +967,21 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             return estimated_cos
 
         def get_bmp(vi, top_faces, top_verts, fis_of_vis, anvis_of_vi, \
-                    estimated_cos):
+                    new_cos):
             '''Generate bmesh and bvhtree with projected estimated surrounding
-            faces, with verts at estimated coordinates
+            faces, with verts at new coordinates
             '''
             import bmesh
             bmp = bmesh.new()
             vertmap = {} # map from old vertex to projected vertex
 
             # Add base vertex
-            v = bmp.verts.new(estimated_cos[vi])
+            v = bmp.verts.new(new_cos[vi])
             vertmap[top_verts[vi]] = v
 
             # Add vertices
             for oldvi in anvis_of_vi[vi]:
-                v = bmp.verts.new(estimated_cos[oldvi])
+                v = bmp.verts.new(new_cos[oldvi])
                 vertmap[top_verts[oldvi]] = v
 
             # Add triangle faces generated from neighbour verts to bmesh
@@ -1037,11 +1031,20 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             return pvs, pvspeeds
 
-        def is_above_planes(co, bmp, bt):
-            '''Return True if co is located "above" (=on the normal direction
-            side) of all faces, all of which connect at
-            coordinates vco. Otherwise return False.
+        def is_above_planes(v, speed0, co, bmp, bt):
+            '''Return True if co is located above normal plane (vector speed0)
+            at vertex v location, and above (=on the normal direction side)
+            of all faces, all of which connect at v. Otherwise return False.
             '''
+
+            # Return False if co is located below vector normal plane
+            u = co - v.co
+            m = u.normalized()
+            vdir = speed0.normalized()
+            cos_alpha = m @ vdir
+            if cos_alpha < 0.0:
+                return False
+
             # Cast rays from co towards face centers and check the
             # normal direction. Rays are cast until counter results in
             # difference of two. Default is not above.
@@ -1092,11 +1095,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             for v0, v1 in zip(vpairs0, vpairs1):
                 # Check if co is above planes
                 co = (estimated_cos[v0] + estimated_cos[v1]) / 2.0
-                is_above = is_above_planes(co, bmp, bt)
+                is_above = is_above_planes(v, vnspeed, co, bmp, bt)
                 is_aboves.append(is_above)
 
-                # Project co above planes and vertex normal plane
-                co = project_co_to_planes(v, co, bt, vnspeed)
+                # If needed, project co above planes and vertex normal plane
+                if not is_above:
+                    co = project_co_to_planes(v, co, bt, vnspeed)
 
                 mid_cos.append(co)
                 vec = estimated_cos[v1] - estimated_cos[v0]
@@ -1167,7 +1171,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             return hit_co
 
-        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bt, vnspeeds):
+        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bmp, bt, vnspeeds):
             '''Calculate geometric mean from vertex neighbours' locations and
             speeds. Target coordinate is projected up from planes.
             '''
@@ -1179,7 +1183,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                 s = speeds[i]
                 co += v.co + s
             co /= float(len(anvis))
-            co = project_co_to_planes(cv, co, bt, vnspeeds[vi])
+
+            # If target is below planes, project it above
+            if not is_above_planes(cv, vnspeeds[vi], co, bmp, bt):
+                co = project_co_to_planes(cv, co, bt, vnspeeds[vi])
             return co
 
         def limit_co_by_angle_deviation(co, v, speed):
@@ -1317,11 +1324,19 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             from mathutils import Vector
             target_speed = Vector((0, 0, 0))
 
-            # Calculate target speed
-            for s, w in zip(target_speeds, weights):
+            # Calculate target speed. Weights are scaled by scaled
+            # vector length in order to make target selection
+            # independent of vector length (only weight w0 matters).
+            max_len = max([x.length for x in target_speeds])
+            sws = [] # scaled weights
+            for s, w0 in zip(target_speeds, weights):
+                w = w0 / (s.length / max_len)
                 target_speed += s * w
-            target_speed /= sum(weights)
+                sws.append(w)
+            target_speed /= sum(sws)
 
+            if fulldebug:
+                l.debug("Uncorrected target co %s" % str(oldv.co + target_speed))
             #return target_speed # for debugging
 
             # Maximum allowed relative velocity change
@@ -1348,8 +1363,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             target_speed = vel * vec
 
             # Limit by maximum allowed relative velocity among neighbours
-            #if target_speed.length > (mrv * min_neighbour_vel):
-            #    target_speed = (mrv * min_neighbour_vel) * vec.normalized()
+            # TODO: Remove?
+            #max_vel = 1.3 * min_neighbour_vel
+            #if target_speed.length > max_vel:
+            #    target_speed = max_vel * vec.normalized()
 
             return target_speed
 
@@ -1359,11 +1376,15 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
         #######################################################
 
         # Calculate vertex normal speeds
-        vnspeeds = get_vertex_normal_speeds(speeds, top_verts, top_faces, \
+        vnspeeds = get_vertex_normal_speeds(top_verts, top_faces, \
                                             base_fis_of_vis)
         # Calculate estimated_cos = estimate where vertices would be
         # after this substep
         estimated_cos = get_estimated_cos(top_verts, speeds)
+
+        # Calculate np_cos = estimate where vertices would be if
+        # vertex normal speeds (minimum velocity) were to be used
+        np_cos = get_estimated_cos(top_verts, vnspeeds)
 
         # Calculate convexity_sums = sum of convex edge convexity values per vertex
         convexity_sums = calculate_convexity_sums(bm, top_verts, top_faces)
@@ -1377,6 +1398,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
 
             # Boundary vertices use plain vertex normal speed
             if is_boundaries[vi]:
+                # TODO: Restore boundary neighbour interpolation method?
                 new_speeds.append(vnspeeds[vi])
                 continue
 
@@ -1386,13 +1408,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
             # Generate bmesh and bvhtree of projected faces surrounding this
             # vertex, with vertices located at estimated coordinates
             bmp, bt = get_bmp(vi, top_faces, top_verts, fis_of_vis, \
-                              anvis_of_vi, estimated_cos)
+                              anvis_of_vi, np_cos)
 
             # Calculate projected geometric mean target coordinates
             min_velocity = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
             min_speed = min_velocity * speeds[vi].normalized()
             pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
-                                                speeds, bt, vnspeeds)
+                                                speeds, bmp, bt, vnspeeds)
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
@@ -1438,6 +1460,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                         + ", anv %f" % anv \
                         + ", cfac %f" % cfac)
                 l.debug("target_speeds lengths %s" % str([x.length for x in target_speeds]))
+                l.debug("target_cos %s" % str([(v.co + x) for x in target_speeds]))
                 l.debug("target_co %s " % str(v.co + target_speed) \
                         + "velocity %f" % target_speed.length)
 
