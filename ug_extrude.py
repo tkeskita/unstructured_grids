@@ -81,14 +81,17 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Extrude layers
         for i in range(ug_props.extrusion_layers):
             t0 = time.clock()
+            is_last_layer = (i == (ug_props.extrusion_layers - 1))
             if i == 0:
                 bm, bmt, nf, speeds, new_ugfaces = \
                     extrude_cells(bm, bmt, initial_faces, speeds, \
-                                  new_ugfaces, initial_face_areas)
+                                  new_ugfaces, initial_face_areas, \
+                                  is_last_layer)
             else:
                 bm, bmt, nf, speeds, new_ugfaces = \
                     extrude_cells(bm, bmt, [], speeds, \
-                                  new_ugfaces, initial_face_areas)
+                                  new_ugfaces, initial_face_areas, \
+                                  is_last_layer)
             t1 = time.clock()
             l.debug("Extruded layer %d, " % (i + 1) \
                     + "cells added: %d " % n \
@@ -202,7 +205,8 @@ def initialize_extrusion():
     return True, initial_faces
 
 
-def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_areas):
+def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
+                  initial_face_areas, is_last_layer):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -267,11 +271,15 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
     base_verts, base_vis_of_fis, base_fis_of_vis, ibasevertmap = \
         get_verts_and_relations(base_faces)
 
-    # Populate initial verts to trajectory bmesh
+    # Populate initial verts and faces to trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
         for v in base_verts:
             bmt.verts.new(v.co)
-
+        bmt.verts.ensure_lookup_table()
+        bmt.verts.index_update()
+        for vis in base_vis_of_fis:
+            verts = [bmt.verts[vi] for vi in vis]
+            bmt.faces.new(verts)
 
     def get_edges_and_face_map(faces):
         '''Generate face and edge topology relationshops.
@@ -1502,6 +1510,20 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, initial_face_area
                                     top_faces, base_fis_of_vis)
             if ug_props.extrusion_create_trajectory_object:
                 bmt = update_trajectory_mesh(bmt, top_verts)
+
+
+    def add_faces_to_trajectory_mesh(bmt, nv0, vis_of_fis):
+        '''Add final faces to mesh'''
+        bmt.verts.ensure_lookup_table()
+        bmt.verts.index_update()
+        for vis in vis_of_fis:
+            verts = [bmt.verts[nv0 + vi] for vi in vis]
+            bmt.faces.new(verts)
+        return bmt
+
+    if is_last_layer:
+        nv0 = len(bmt.verts) - len(top_verts)
+        bmt = add_faces_to_trajectory_mesh(bmt, nv0, base_vis_of_fis)
 
 
     def add_base_face_to_cells(faces, ugci0):
