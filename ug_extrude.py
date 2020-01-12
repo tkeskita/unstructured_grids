@@ -1200,8 +1200,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                     cut_substeps.append(cut_step)
             return cut_substeps
 
-        def get_weights(is_aboves, cut_substeps, vplengths, \
-                        pvgm_target_co, convexity_sums, anvis, vi):
+        def get_ave_neigh_convexity(convexity_sums, anvis):
+            '''Calculate average convexity among neighbours'''
+            cs = [convexity_sums[x] for x in anvis]
+            return sum(cs) / float(len(cs))
+
+        def get_convex_weights(is_aboves, cut_substeps, vplengths):
             '''Calculate weights for target coordinates. Weights are used to
             calculate a target coordinate and speed.
             '''
@@ -1213,11 +1217,6 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 wmax = 1.0 / z # Normalisation factor
                 w = 1.0 / (x + z) / wmax
                 return w * w
-
-            def get_ave_neigh_convexity(convexity_sums, anvis):
-                '''Calculate average convexity among neighbours'''
-                cs = [convexity_sums[x] for x in anvis]
-                return sum(cs) / float(len(cs))
 
             gmf = ug_props.extrusion_geometric_mean_factor
             weights = []
@@ -1242,29 +1241,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                                 + "min weight %f " % wo3 \
                                 + "w %f" % w)
 
-            # Average neighbour convexity
-            anv = get_ave_neigh_convexity(convexity_sums, anvis)
+            return weights
 
-            # Append geometric mean weight
-            gmw = 4.0 + anv * 80.0 # TODO: Parametrize
-            weights.append(weight(gmw))
-
-            # Append vertex normal weight
-            vnw = 1.0 + anv * 200.0 # TODO: Parametrize
-            weights.append(weight(vnw))
-
-            return weights, anv
-
-        def get_speeds(v, target_cos, is_aboves, cut_substeps, pvgm_target_co, \
-                       min_velocity, convexity_sum, vnspeed):
-            '''Calculate unconstrained target speeds for target_cos'''
+        def get_convex_speeds(v, target_cos, is_aboves, cut_substeps, cfac):
+            '''Calculate target speeds for convex targets'''
 
             from mathutils import Vector
             ug_props = bpy.context.scene.ug_props
-
-            # Speed factor for convex vertices
-            csf = ug_props.extrusion_convex_speed_factor
-            cfac = (1.0 + convexity_sum * csf)
 
             speeds = []
             # ivpairs data exists, get velocity
@@ -1272,21 +1255,28 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 for co, ia, cs in zip(target_cos, is_aboves, cut_substeps):
                     # Calculate velocity, scale speed
                     vec = co - v.co
-                    # vel = max(vec.length, min_velocity) * cfac # no min limit
+                    # vel = max(vec.length, min_velocity) * cfac
                     vel = vec.length * cfac
                     speeds.append(vel * vec.normalized())
 
-            # Append geometric mean coordinate vector to end
-            pvgm_vec = pvgm_target_co - v.co
-            #if pvgm_vec.length < min_velocity: # no min limit
-            #    pvgm_vec.normalize()
-            #    pvgm_vec *= min_velocity
-            speeds.append(cfac * pvgm_vec)
+            return speeds
 
-            # Append vertex normal speed to end
-            speeds.append(cfac * vnspeed)
+        def get_convex_target(v, convex_speeds, convex_weights, pvgm_target_co):
+            '''Calculate convex target from speeds and weights'''
 
-            return speeds, cfac
+            # Default to geometric mean if there is no other data
+            if not convex_speeds:
+                return pvgm_target_co
+
+            ug_props = bpy.context.scene.ug_props
+            from mathutils import Vector
+            target_speed = Vector((0, 0, 0))
+
+            # Target is sum of weighted speeds
+            for s, w in zip(convex_speeds, convex_weights):
+                target_speed += s * w
+            target_speed /= sum(convex_weights)
+            return v.co + target_speed
 
         def get_min_neighbour_vel(speeds, anvis_of_vi):
             '''Calculate minimum neighbour velocity'''
@@ -1325,29 +1315,35 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             # New coordinates
             return v.co + u
 
-        def get_target_speed(oldv, oldspeed, target_speeds, weights, \
-                             min_neighbour_vel, min_velocity, convexity_sum):
-            '''Calculate new speed vector from target_cos and weights.
-            Velocity and direction of speed are constrained here.
-            '''
-            ug_props = bpy.context.scene.ug_props
-            from mathutils import Vector
-            target_speed = Vector((0, 0, 0))
+        def get_target_speed(v, convexity_sum, anc, vn_target, pvgm_target, convex_target):
+            '''Calculate an unconstrained target speed from several options'''
 
-            # Weights are scaled by vector lengths in order to make target
-            # selection independent of vector length (only weight w0 matters).
-            max_len = max([x.length for x in target_speeds])
-            sws = [] # scaled weights
-            for s, w0 in zip(target_speeds, weights):
-                w = w0 / (s.length / max_len)
-                target_speed += s * w
-                sws.append(w)
-            target_speed /= sum(sws)
+            def mix_f(x, cut_off):
+                '''Linear mixing function for [0, cut_off]'''
+                slope = 1.0 / cut_off
+                y = slope * x
+                y = max(0.0, min(1.0, y)) # Limit to [0, 1]
+                return y
+
+            # target1: Mix vertex normal target with geometric mean target by
+            # average neighbour convexity sum
+            fac1 = mix_f(anc, 0.02) # TODO: Parametrize cut off
+            target1 = fac1 * pvgm_target + (1 - fac1) * vn_target
+
+            # target2: Mix target1 with convex target by convexisty_sum
+            fac2 = mix_f(convexity_sum, 0.002) # TODO: Parametrize cut off
+            target2 = fac2 * convex_target + (1 - fac2) * target1
 
             if fulldebug:
-                l.debug("Uncorrected target co %s" % str(oldv.co + target_speed))
+                l.debug("fac1 %f, fac2 %f" % (fac1, fac2))
 
-            #return target_speed # for debugging
+            target_speed = target2 - v.co
+            return target_speed
+
+
+        def limit_target_speed(oldv, oldspeed, target_speed, convexity_sum, min_velocity):
+            '''Constrain velocity and direction of speed'''
+            ug_props = bpy.context.scene.ug_props
 
             # Maximum allowed relative velocity change
             mrv = 1.0 + convexity_sum * 0.5 # TODO: Parametrize acceleration factor
@@ -1447,35 +1443,42 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 vimap[x] = i
             cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
 
-            # Calculate weights for target_cos + geometric mean + vertex normal
-            weights, anv = get_weights(is_aboves, cut_substeps, vplengths, \
-                                       pvgm_target_co, convexity_sums, \
-                                       anvis_of_vi[vi], vi)
+            # Calculate average neighbour convexity sum
+            anc = get_ave_neigh_convexity(convexity_sums, anvis_of_vi[vi])
 
-            # Calculate target_speeds for target_cos + geometric mean + vertex normal
-            target_speeds, cfac = get_speeds(\
-                v, target_cos, is_aboves, cut_substeps, pvgm_target_co, \
-                min_velocity, convexity_sums[vi], vnspeeds[vi])
+            # Calculate convex target weights
+            convex_weights = get_convex_weights(is_aboves, cut_substeps, vplengths)
+
+            # Speed up factor for convex vertices
+            csf = ug_props.extrusion_convex_speed_factor
+            cfac = (1.0 + convexity_sums[vi] * csf)
+
+            # Calculate convex target speeds and target
+            convex_speeds = get_convex_speeds(v, target_cos, is_aboves, cut_substeps, cfac)
+            convex_target_co = get_convex_target(v, convex_speeds, convex_weights, pvgm_target_co)
 
             # Calculate minimum neighbour velocity to limit speed
-            min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])
+            #min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])
 
             # Calculate a new target speed vector for this vertex
-            target_speed = get_target_speed(v, speeds[vi], target_speeds, \
-                                            weights, min_neighbour_vel, \
-                                            min_velocity, convexity_sums[vi])
+            vn_target_co = v.co + vnspeeds[vi]
+            target_speed = get_target_speed(v, convexity_sums[vi], anc, vn_target_co, pvgm_target_co, convex_target_co)
+
+            # Limit speed velocity and direction
+            target_speed = limit_target_speed(v, speeds[vi], target_speed, convexity_sums[vi], min_velocity)
+
             if fulldebug:
-                l.debug("is_aboves %s" % str(is_aboves))
-                l.debug("target_cos %s" % str(target_cos))
-                l.debug("pvgm_target_co %s vn target %s" % (str(pvgm_target_co), str(v.co + vnspeeds[vi])))
-                l.debug("cut_substeps %s" % str(cut_substeps))
-                l.debug("weights %s" % str(weights))
+                l.debug("vn_target_co %s" % str(vn_target_co))
+                l.debug("pvgm_target_co %s" % str(pvgm_target_co))
+                l.debug("convex_target_co %s" % str(convex_target_co))
+                l.debug("-- is_aboves %s" % str(is_aboves))
+                l.debug("-- target_cos %s" % str(target_cos))
+                l.debug("-- cut_substeps %s" % str(cut_substeps))
+                l.debug("-- convex_weights %s" % str(convex_weights))
                 l.debug("convexity_sum %f" % convexity_sums[vi] \
-                        + ", anv %f" % anv \
+                        + ", anc %f" % anc \
                         + ", cfac %f" % cfac)
-                l.debug("target_speeds lengths %s" % str([x.length for x in target_speeds]))
-                l.debug("target_cos %s" % str([(v.co + x) for x in target_speeds]))
-                l.debug("final target_co %s " % str(v.co + target_speed) \
+                l.debug("FINAL target_co %s " % str(v.co + target_speed) \
                         + "velocity %f" % target_speed.length)
 
             new_speeds.append(target_speed)
