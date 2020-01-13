@@ -153,14 +153,23 @@ class UGProperties(bpy.types.PropertyGroup):
     extrusion_substeps: bpy.props.IntProperty(
         name="Extrusion Substeps",
         description="Number of Internal Substeps per Layer",
-        default=3,
+        default=5,
         min=1, max=100
     )
+    # TODO: Use degrees for angle definition
     extrusion_deviation_angle_min: bpy.props.FloatProperty(
-        name="Minimum cos(angle)",
-        description="Minimum Allowed Cosine of Angle " \
+        name="Minimum Substep cos(angle)",
+        description="Minimum Allowed Cosine of Angle for Every Substep" \
         + "for Change of Directions",
         default=0.98,
+        min=0.0, max=1.0
+    )
+    # TODO: Use degrees for angle definition
+    extrusion_cone_angle: bpy.props.FloatProperty(
+        name="AR Cone cos(angle)",
+        description="Cosine of Angle for Accepted Region Cone" \
+        + " (Based on Vertex Normal Direction)",
+        default=0.7,
         min=0.0, max=1.0
     )
     extrusion_weight_smoothing_coefficient: bpy.props.FloatProperty(
@@ -333,6 +342,8 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_substeps", text="Substeps")
             row = layout.row()
             row.prop(ug_props, "extrusion_deviation_angle_min")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_cone_angle")
             row = layout.row()
             row.prop(ug_props, "extrusion_weight_smoothing_coefficient")
             row = layout.row()

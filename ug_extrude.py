@@ -963,7 +963,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
     ########################################
 
     def evolve_substep(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
-                       intvpairs0, intvpairs1, top_faces, fis_of_vis):
+                       intvpairs0, intvpairs1, top_faces, fis_of_vis, \
+                       coords0, vnspeeds0):
         '''Evolve extrusion by one substep'''
 
         # Help functions
@@ -1284,20 +1285,16 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             vels = [x.length for x in get_items_from_list(speeds, anvis_of_vi)]
             return min(vels)
 
-        def limit_co_by_angle_deviation(co, v, speed):
+        def limit_co_by_angle_deviation(co, baseco, speed, min_cos_alpha):
             '''Limit coordinates co by angle deviation by moving
             coordinate inside a conical volume. Cone starting point is
-            base vertex, and normal vector (vdir) is calculated from
-            speed vector.
+            baseco, and normal vector (vdir) is calculated from
+            speed vector. min_cos_angle defines the angle of the cone.
             '''
             from math import sqrt
-            ug_props = bpy.context.scene.ug_props
-
-            # Minimum allowed cosine of angle
-            min_cos_alpha = ug_props.extrusion_deviation_angle_min
 
             # Vector from vertex to new coordinates
-            u = co - v.co
+            u = co - baseco
             m = u.normalized()
             vdir = speed.normalized()
             cos_alpha = m @ vdir
@@ -1314,7 +1311,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 u = p + q
 
             # New coordinates
-            return v.co + u
+            return baseco + u
 
         def get_target_speed(v, convexity_sum, anc, vn_target, pvgm_target, convex_target):
             '''Calculate an unconstrained target speed from several options'''
@@ -1345,7 +1342,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             return target_speed
 
 
-        def limit_target_speed(oldv, oldspeed, target_speed, convexity_sum, min_velocity):
+        def limit_target_speed(oldv, oldspeed, target_speed, convexity_sum, min_velocity, coord0, vnspeed0):
             '''Constrain velocity and direction of speed'''
             ug_props = bpy.context.scene.ug_props
 
@@ -1365,10 +1362,16 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             vel = max(vel, 0.5 * oldvel / mrv) # Clamp lower limit # TODO: Parametrize braking factor
             vel = max(vel, min_velocity) # Ensure minimum velocity
 
-            # Limit the change of direction angle
-            # TODO: add limit angle from vertex normal, too?
-            limited_co = limit_co_by_angle_deviation\
-                         (oldv.co + target_speed, oldv, oldspeed)
+            # Limit the change of direction angle compared to previous direction
+            min_cos_alpha = ug_props.extrusion_deviation_angle_min
+            limited_co = limit_co_by_angle_deviation \
+                         (oldv.co + target_speed, oldv.co, oldspeed, min_cos_alpha)
+
+            # Limit coordinates within accepted region cone
+            cone_cos_alpha = ug_props.extrusion_cone_angle
+            limited_co = limit_co_by_angle_deviation \
+                         (limited_co, coord0, vnspeed0, cone_cos_alpha)
+
             vec = limited_co - oldv.co
             vec.normalize()
             target_speed = vel * vec
@@ -1469,7 +1472,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             target_speed = get_target_speed(v, convexity_sums[vi], anc, vn_target_co, pvgm_target_co, convex_target_co)
 
             # Limit speed velocity and direction
-            target_speed = limit_target_speed(v, speeds[vi], target_speed, convexity_sums[vi], min_velocity)
+            target_speed = limit_target_speed(v, speeds[vi], target_speed, convexity_sums[vi], min_velocity, coords0[vi], vnspeeds0[vi])
 
             if fulldebug:
                 l.debug("vn_target_co %s" % str(vn_target_co))
@@ -1514,13 +1517,21 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
     # Call the extrusion substep in loop
     ug_props = bpy.context.scene.ug_props
     if not ug_props.extrusion_uses_fixed_initial_directions:
+
+        # Save vertex normal speeds for cone limitation
+        vnspeeds0 = get_vertex_normal_speeds(top_verts, top_faces, \
+                                             base_fis_of_vis)
+        # Save top vertex locations for cone limitation
+        coords0 = [v.co for v in top_verts]
+
         # Carry out substeps
         for j in range(ug_props.extrusion_substeps):
             if fulldebug: l.debug("Extrusion substep %d" % j)
             speeds = evolve_substep(bm, top_verts, speeds, \
                                     is_boundaries, anvis_of_vi, \
                                     intvpairs0, intvpairs1, \
-                                    top_faces, base_fis_of_vis)
+                                    top_faces, base_fis_of_vis, \
+                                    coords0, vnspeeds0)
             if ug_props.extrusion_create_trajectory_object:
                 bmt = update_trajectory_mesh(bmt, top_verts)
 
