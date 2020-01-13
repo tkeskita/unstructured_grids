@@ -1535,9 +1535,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         return bmt
 
     # Add faces to trajectory object at last layer
-    if is_last_layer and ug_props.extrusion_create_trajectory_object:
-        nv0 = len(bmt.verts) - len(top_verts)
-        bmt = add_faces_to_trajectory_mesh(bmt, nv0, base_vis_of_fis)
+    if not ug_props.extrusion_uses_fixed_initial_directions:
+        if is_last_layer and ug_props.extrusion_create_trajectory_object:
+            nv0 = len(bmt.verts) - len(top_verts)
+            bmt = add_faces_to_trajectory_mesh(bmt, nv0, base_vis_of_fis)
 
 
     def add_base_face_to_cells(faces, ugci0):
