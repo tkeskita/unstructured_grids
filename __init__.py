@@ -178,7 +178,7 @@ class UGProperties(bpy.types.PropertyGroup):
     extrusion_convex_speed_factor: bpy.props.FloatProperty(
         name="Convex Speed Factor",
         description="Extra Speed Factor for Convex Vertices",
-        default=0.0,
+        default=0.5,
         min=0.0, max=10.0
     )
     extrusion_max_relative_velocity: bpy.props.FloatProperty(
@@ -186,6 +186,18 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Maximum Relative Velocity Allowed for Neighbour Vertices",
         default=1.1,
         min=1.0, max=10.0
+    )
+    extrusion_cut_off_anc: bpy.props.FloatProperty(
+        name="ANC Cut Off Value",
+        description="Cut Off Value for Average Neighbour Convexity in Target Selection",
+        default=0.05,
+        min=0.0, max=1000000.0
+    )
+    extrusion_cut_off_convexity: bpy.props.FloatProperty(
+        name="SC Cut Off Value",
+        description="Cut Off Value for Self Convexity in Target Selection",
+        default=0.02,
+        min=0.0, max=1000000.0
     )
     extrusion_create_trajectory_object: bpy.props.BoolProperty(
         name="Create Trajectory Object",
@@ -329,6 +341,10 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_convex_speed_factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_max_relative_velocity")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_cut_off_anc")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_cut_off_convexity")
             row = layout.row()
             row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()

@@ -1186,11 +1186,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 q0 = (s0 @ vdir) * vdir # speed component aligned with vdir
                 q1 = (s1 @ vdir) * vdir # speed component aligned with vdir
 
-                vec1 = co1 + q1 - (co0 + q0) # vector between moved verts
+                vec1 = (co1 + q1) - (co0 + q0) # vector between moved verts
 
                 # If distance is increasing (not going to intersect),
                 # then set cut_substep to LARGE
-                if vec1.length > vec0.length:
+                SAFETY = 0.999 # avoid singularity
+                if vec1.length > SAFETY * vec0.length:
                     cut_substeps.append(LARGE)
 
                 # Otherwise calculate substeps until intersection
@@ -1327,11 +1328,14 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             # target1: Mix vertex normal target with geometric mean target by
             # average neighbour convexity sum
-            fac1 = mix_f(anc, 0.02) # TODO: Parametrize cut off
+            ug_props = bpy.context.scene.ug_props
+            par1 = ug_props.extrusion_cut_off_anc
+            fac1 = mix_f(anc, par1)
             target1 = fac1 * pvgm_target + (1 - fac1) * vn_target
 
             # target2: Mix target1 with convex target by convexisty_sum
-            fac2 = mix_f(convexity_sum, 0.002) # TODO: Parametrize cut off
+            par2 = ug_props.extrusion_cut_off_convexity
+            fac2 = mix_f(convexity_sum, par2)
             target2 = fac2 * convex_target + (1 - fac2) * target1
 
             if fulldebug:
