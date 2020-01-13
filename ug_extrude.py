@@ -119,6 +119,11 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 def recreate_trajectory_object(bm):
     '''Replace trajectory object mesh with argument mesh'''
 
+    # Do nothing in fixed extrusion mode
+    ug_props = bpy.context.scene.ug_props
+    if ug_props.extrusion_uses_fixed_initial_directions:
+        return None
+
     obname = "Extrusion Trajectory"
     bpy.ops.object.mode_set(mode='OBJECT')
 
