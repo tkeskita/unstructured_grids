@@ -1225,7 +1225,6 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 w = 1.0 / (x + z) / wmax
                 return w * w
 
-            gmf = ug_props.extrusion_geometric_mean_factor
             weights = []
 
             # Weights for target coordinates
@@ -1237,15 +1236,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                     wo1 = weight(vplen_fac)
                     # Weight option 2: Value of cut substeps
                     wo2 = weight(cs)
-                    # Weight option 3: Minimum convex weight # TODO: Remove?
-                    wo3 = weight(gmf)
-                    w = max(wo1, wo2, wo3)
+                    w = max(wo1, wo2)
                     weights.append(w)
                     if fulldebug:
                         l.debug("vfrac %f " % (vl / max_vplen) \
                                 + "closeness %f " % wo1 \
                                 + "cut_substeps %f " % wo2 \
-                                + "min weight %f " % wo3 \
                                 + "w %f" % w)
 
             return weights
@@ -1329,10 +1325,15 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 return y
 
             # target1: Mix vertex normal target with geometric mean target by
-            # average neighbour convexity sum
+
+            # Average neighbour convexity sum
             ug_props = bpy.context.scene.ug_props
             par1 = ug_props.extrusion_cut_off_anc
             fac1 = mix_f(anc, par1)
+            # Minimum geometric target mix fraction
+            mgf = ug_props.extrusion_minimum_geometric_frac
+
+            fac1 = max(mgf, fac1)
             target1 = fac1 * pvgm_target + (1 - fac1) * vn_target
 
             # target2: Mix target1 with convex target by convexisty_sum

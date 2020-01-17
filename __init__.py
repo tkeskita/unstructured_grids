@@ -178,11 +178,11 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1.0,
         min=0.0, max=100.0
     )
-    extrusion_geometric_mean_factor: bpy.props.FloatProperty(
-        name="Geometric Mean Factor",
-        description="Inverse Factor for Weighting Geometric Mean as a Target Coordinate",
-        default=20.0,
-        min=0.0, max=100.0
+    extrusion_minimum_geometric_frac: bpy.props.FloatProperty(
+        name="Minimum GM Fraction",
+        description="Minimum Fraction for using Geometric Target instead of Vertex Normal Target",
+        default=0.5,
+        min=0.0, max=1.0
     )
     extrusion_convex_speed_factor: bpy.props.FloatProperty(
         name="Convex Speed Factor",
@@ -347,8 +347,6 @@ class VIEW3D_PT_UG_GUI:
             row = layout.row()
             row.prop(ug_props, "extrusion_weight_smoothing_coefficient")
             row = layout.row()
-            row.prop(ug_props, "extrusion_geometric_mean_factor")
-            row = layout.row()
             row.prop(ug_props, "extrusion_convex_speed_factor")
             row = layout.row()
             row.prop(ug_props, "extrusion_max_relative_velocity")
@@ -356,6 +354,9 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_cut_off_anc")
             row = layout.row()
             row.prop(ug_props, "extrusion_cut_off_convexity")
+            row = layout.row()
+            row.prop(ug_props, "extrusion_minimum_geometric_frac")
+
             row = layout.row()
             row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()
