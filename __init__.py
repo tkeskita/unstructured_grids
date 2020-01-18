@@ -367,7 +367,10 @@ class VIEW3D_PT_UG_GUI:
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
 
         row = layout.row()
-        row.label(text="Debug Selected Items:")
+        row.label(text="Info About Selected Items:")
+
+        row = layout.row()
+        row.operator("unstructured_grids.update_edge_stats_text", text="Edge Stats of Faces")
         row = layout.row()
         row.operator("unstructured_grids.check_cells", text="Check Cells")
         row = layout.row()
@@ -425,6 +428,7 @@ classes = (
     ug_checks.UG_OT_PrintSelectedCellsInfo,
     ug_checks.UG_OT_PrintSelectedFacesInfo,
     ug_checks.UG_OT_PrintSelectedVertexIndices,
+    ug_checks.UG_OT_PrintEdgeStatsText,
 )
 
 def register():

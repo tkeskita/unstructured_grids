@@ -341,3 +341,93 @@ def print_selected_vertex_indices():
     set_text_to_text_block(text)
     l.debug(text.strip("\n"))
     return len(verts)
+
+
+class UG_OT_PrintEdgeStatsText(bpy.types.Operator):
+    '''Generate Edge Statistics of Mesh Faces (Minimum / Average / Maximum Length)'''
+    bl_idname = "unstructured_grids.update_edge_stats_text"
+    bl_label = "Update Edge Statistics Text"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'}
+
+    def execute(self, context):
+        ug_props = bpy.context.scene.ug_props
+        min_len, mean_len, max_len = get_edge_stats()
+
+        if min_len == 0.0:
+            text = "Error: No faces selected."
+            set_text_to_text_block(text)
+            self.report({'ERROR'}, text)
+            return {'FINISHED'}
+
+        text = "%.6e / %.6e / %.6e" % (min_len, mean_len, max_len)
+        text = "Edge Stats of Selected Mesh Faces: " + text
+        set_text_to_text_block(text)
+        l.debug(text.strip("\n"))
+        self.report({'INFO'}, "Edge stats ready. See 'UG' Text Block.")
+        return {'FINISHED'}
+
+
+def get_edge_stats():
+    '''Return minimum, average and maximum lengths of
+    selected edges in currently selected object mesh faces
+    '''
+
+    import bmesh
+    if not bpy.context.active_object:
+        return 0.0, 0.0, 0.0
+
+    ob = bpy.context.active_object
+    mode = ob.mode
+
+    if mode == 'OBJECT':
+        bpy.ops.object.mode_set(mode='EDIT')
+
+    bm = bmesh.from_edit_mesh(ob.data)
+    if not bm.faces:
+        return 0.0, 0.0, 0.0
+
+    faces = [f for f in bm.faces if f.select]
+    min_len, mean_len, max_len = get_edge_stats_from_bmesh_faces(faces)
+    # Return to original mode
+    bpy.ops.object.mode_set(mode=mode)
+
+    return min_len, mean_len, max_len
+
+
+def get_edge_stats_from_bmesh_faces(faces):
+    '''Return minimum, average and maximum lengths of
+    selected edges in argument bmesh faces
+    '''
+
+    from sys import float_info
+    min_len = float_info.max # minimum length
+    max_len = 0.0 # maximum length
+    mean_len = 0.0 # average length
+
+    processed_edges = set()
+    for f in faces:
+        for e in f.edges:
+            if e in processed_edges:
+                continue
+            processed_edges.add(e)
+
+            # Edge length
+            co0 = e.verts[0].co
+            co1 = e.verts[1].co
+            vec = co1 - co0
+            elen = vec.length
+
+            if elen < min_len:
+                min_len = elen
+            if elen > max_len:
+                max_len = elen
+            mean_len += elen
+
+    if len(processed_edges) == 0:
+        return 0.0, 0.0, 0.0
+
+    mean_len /= float(len(processed_edges))
+    return min_len, mean_len, max_len
