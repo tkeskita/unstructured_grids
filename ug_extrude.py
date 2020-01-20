@@ -59,6 +59,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         return context.mode in {'OBJECT', 'EDIT_MESH'}
 
     def execute(self, context):
+        mode = context.active_object.mode
         # Initialize from selected faces if needed
         is_ok, text, initial_faces = initialize_extrusion()
         if not is_ok:
@@ -109,6 +110,8 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         bmt.free()
         ug_op.set_faces_boundary_to_default(new_ugfaces)
         ug.update_ug_all_from_blender()
+        # Return to original mode
+        bpy.ops.object.mode_set(mode=mode)
 
         self.report({'INFO'}, "Extruded %d new cells" % n)
         return {'FINISHED'}
@@ -127,6 +130,8 @@ def recreate_trajectory_object(bm):
 
     # Delete old object
     if obname in bpy.data.objects:
+        for ob in bpy.data.objects:
+            ob.select_set(False)
         bpy.data.objects[obname].select_set(True)
         mesh = bpy.data.objects[obname].data
         bpy.ops.object.delete()
@@ -138,7 +143,7 @@ def recreate_trajectory_object(bm):
         bm.to_mesh(mesh_data)
         ob = bpy.data.objects.new(obname, mesh_data)
         bpy.context.scene.collection.objects.link(ob)
-        bpy.context.view_layer.objects.active = bpy.data.objects[obname]
+        ob.select_set(False)
 
 
 def initialize_extrusion():
