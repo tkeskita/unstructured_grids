@@ -185,6 +185,7 @@ def initialize_extrusion():
             new_verts[vi] = v
         new_faces.append(verts)
     bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
 
     # Create faces
     for nf in new_faces:
@@ -192,6 +193,7 @@ def initialize_extrusion():
         f.normal_update()
         f.select_set(True)
     bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
 
     # Bail out if there are no faces
     if len(bm.faces) == 0:
