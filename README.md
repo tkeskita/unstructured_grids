@@ -5,7 +5,7 @@
 ## Introduction
 
 [Unstructured Grids (UG)](https://github.com/tkeskita/unstructured_grids)
-is an add-on for [Blender 2.80](https://www.blender.org)
+is an add-on for [Blender 2.80 (or a later version)](https://www.blender.org)
 for creating, importing, editing and exporting of
 3D volume meshes composed of arbitrary polyhedron cells (a.k.a [3D
 unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
@@ -86,7 +86,8 @@ Currently implemented features include:
 
 - Boundary face patches can be changed by assigning material for faces
 
-- Selection of cells via operators (UG Select Cells Inclusive/Exclusive)
+- Selection of cells from selected vertices via operators (UG Select
+  Cells Inclusive/Exclusive)
 
 - Cell and face zones can be created, visualized and edited by
   modifying Vertex Groups in Blender.
@@ -96,8 +97,8 @@ Currently implemented features include:
 
 - Deletion of selected cells to carve voids into the domain.
 
-- Extrusion of new cells (one or several layers) from selected faces
-  (Warning: slow operation) (Note: Experimental feature).
+- Fixed Extrusion (towards vertex normal direction) of new cells
+  (one or several layers) from selected faces (Warning: slow operation).
 
 - Dissolve Edges (merge selected vertices connected by edges)
   (Note: Experimental feature).
@@ -107,6 +108,10 @@ Currently implemented features include:
 
 - Cell integrity check and statistics routine (Check Selected Cells)
 
+- Hyperbolic Extrusion (Warning: experimental and very slow operation)
+  can be enabled in Extrusion Settings (disable Use Fixed Extrusion).
+  Under development.
+
 
 ## Installation
 
@@ -114,12 +119,13 @@ Currently implemented features include:
   https://github.com/tkeskita/unstructured_grids. To download add-on from
   Github, Select “Clone or download”, then “Download ZIP”.
 
-- Start Blender 2.80, go to “File” –> “User Preferences” –> “Add-ons” –> “Install” –> open the add-on zip file.
+- Start Blender, go to “File” –> “User Preferences” –> “Add-ons” –> “Install” –> open the add-on zip file.
 
 - Activate the “Unstructured Grids for Blender” add-on in Preferences. Add-on is located in
   Mesh category.
 
-- Note: Python Logging console messages may be useful in case of problems.
+- Note: Python Logging messages (printed to terminal if Blender is
+  started from a terminal) may be useful in case of problems.
   More information in file *\_\_init\_\_.py*.
 
 
@@ -150,13 +156,6 @@ Currently implemented features include:
   that boundary faces don't intersect each other)
 
 - Support for OpenFOAM sets?
-
-- Improve extrusion of new cells. Method could be improved by
-  including smoothing of vertex normals, and extrusion length could be
-  based on neighbour face-to-face angles or vertex normal angles to
-  create hypergeometric extrusions, something like
-  [PyHyp](https://github.com/mdolab/pyhyp) or
-  [Cassiopee](http://elsa.onera.fr/Cassiopee/) do.
 
 - Mesh Quality metrics + operator to select bad cells. Definition of
   bad cells depend on target simulation type, so there would need to
