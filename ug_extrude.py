@@ -60,11 +60,9 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 
     def execute(self, context):
         # Initialize from selected faces if needed
-        initialization_ok, initial_faces = initialize_extrusion()
-        if not initialization_ok:
-            self.report({'ERROR'}, "Initialization failed. Maybe " \
-                        + "no faces were selected, or object name is " \
-                        + "%r?" % ug.obname)
+        is_ok, text, initial_faces = initialize_extrusion()
+        if not is_ok:
+            self.report({'ERROR'}, "Initialization failed: " + text)
             return {'FINISHED'}
 
         # Layer extrusion, initialize stuff
@@ -154,41 +152,58 @@ def initialize_extrusion():
 
     # Do nothing if there is already an UG state
     if ug.exists_ug_state():
-        return True, initial_faces
+        return True, "UG state exists, OK to continue", initial_faces
 
     source_ob = bpy.context.active_object
     if source_ob.name == ug.obname:
-        return False, initial_faces
+        return False, "Source object name can't be " + ug.obname, initial_faces
 
     # Mode switch is needed to make sure mesh is saved to original object
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.mode_set(mode='EDIT')
-    ob = ug.initialize_ug_object()
 
     import bmesh
-    bm = bmesh.from_edit_mesh(source_ob.data)
+    # Couldn't use bmesh.from_edit_mesh() here because original mesh
+    # was modified after changes when bailing out.
+    bm = bmesh.new()
 
-    # Delete unselected faces
-    facelist = []
-    for f in bm.faces:
-        if f.select == False:
-            facelist.append(f)
-    bmesh.ops.delete(bm, geom=facelist, context='FACES_ONLY')
-
-    # Delete leftover verts which are not part of any faces
-    vertlist = []
-    for v in bm.verts:
-        if len(v.link_faces) == 0:
-            vertlist.append(v)
-    bmesh.ops.delete(bm, geom=vertlist, context='VERTS')
-
+    # Create selected faces to bmesh
+    new_verts = {}
+    new_faces = []
+    for p in source_ob.data.polygons:
+        if not p.select:
+            continue
+        verts = []
+        for vi in p.vertices:
+            # New vert exists
+            if vi in new_verts:
+                verts.append(new_verts[vi])
+                continue
+            # Create new vert
+            v = bm.verts.new(source_ob.data.vertices[vi].co)
+            verts.append(v)
+            new_verts[vi] = v
+        new_faces.append(verts)
     bm.verts.ensure_lookup_table()
+
+    # Create faces
+    for nf in new_faces:
+        f = bm.faces.new(nf)
+        f.normal_update()
+        f.select_set(True)
     bm.faces.ensure_lookup_table()
 
-    # Bail out if no faces are left
+    # Bail out if there are no faces
     if len(bm.faces) == 0:
-        ug.delete_ug_object()
-        return False, initial_faces
+        return False, "No faces selected", initial_faces
+
+    # Check mesh for hanging verts
+    vertcolist = check_hanging_face_verts(bm)
+    if vertcolist:
+        return False, "Found %d hanging vert(s) at " % len(vertcolist) \
+            + str(vertcolist), initial_faces
+
+    ob = ug.initialize_ug_object()
 
     # Generate ugverts
     for i in range(len(bm.verts)):
@@ -213,7 +228,22 @@ def initialize_extrusion():
     ug.hide_other_objects()
     bpy.ops.object.mode_set(mode = 'EDIT')
 
-    return True, initial_faces
+    return True, "initialization done", initial_faces
+
+
+def check_hanging_face_verts(bm):
+    '''Check selected faces for hanging verts.
+    Returns list of hanging vert coordinate vectors.
+    '''
+
+    vertcolist = []
+    faces = [f for f in bm.faces if f.select]
+    for f in faces:
+        for v in f.verts:
+            if len(v.link_edges) == 2 and len(v.link_faces) == 2:
+                if v.co not in vertcolist:
+                    vertcolist.append(v.co)
+    return vertcolist
 
 
 def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
