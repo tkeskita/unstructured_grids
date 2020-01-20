@@ -129,6 +129,17 @@ Currently implemented features include:
   More information in file *\_\_init\_\_.py*.
 
 
+## OpenFOAM Export Workflow
+
+- Export cells from Blender (File -> Export -> OpenFOAM PolyMesh (UG))
+  into an *empty* polyMesh folder (under your OpenFOAM case folder
+  *constant/polyMesh*).
+
+- Run OpenFOAM command `renumberMesh -overwrite` to optimize bandwidth.
+
+- Run OpenFOAM command `checkMesh` to make sure mesh is intact and ready for use.
+
+
 ## Development Ideas for Future
 
 - Don't save Unstructured Grid object in blend file to save disk space
