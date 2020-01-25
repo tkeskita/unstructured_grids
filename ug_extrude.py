@@ -709,8 +709,6 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             convexity_sums.append(convexity_sum)
         return convexity_sums
 
-
-    # TODO: Remove?
     def calculate_face_areas(faces):
         '''Calculate areas of faces'''
         areas = []
@@ -718,9 +716,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             areas.append(f.calc_area())
         return areas
 
-    #fi_areas = calculate_face_areas(base_faces)
+    fi_areas = calculate_face_areas(base_faces)
 
-    # TODO: Remove?
+
     def calculate_mean_vertex_area_change(fi_areas, initial_face_areas, \
                                           base_fis_of_vis):
         '''Calculate mean relative change of areas of faces (compared to
@@ -737,70 +735,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             mean_changes.append(mean_change)
         return mean_changes
 
-    #area_coeffs = calculate_mean_vertex_area_change( \
-    #    fi_areas, initial_face_areas, base_fis_of_vis)
+    area_coeffs = calculate_mean_vertex_area_change( \
+        fi_areas, initial_face_areas, base_fis_of_vis)
 
-    # TODO: Remove?
-    def get_convexity_factor(max_convexity):
-        '''Calculated convexity factor from maximum convexity.
-        Used both for extension length scaling and angle deviation
-        maximum length scaling.
-        '''
-
-        ug_props = bpy.context.scene.ug_props
-        convexity_factor = ug_props.extrusion_convexity_scale_factor
-
-        if max_convexity > 0.5:
-            return (max_convexity - 0.5) * 2.0 * convexity_factor + 1.0
-        else:
-            return 1.0
-
-
-    # TODO: Remove?
-    def calculate_extension_length(area_coeffs, is_corners, max_convexities):
-        '''Calculate length how far vertices are extended towards extension
-        direction during casting or extension steps
-        '''
-
-        ug_props = bpy.context.scene.ug_props
-        # Base extension length of a substep
-        ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
-        # Additional length factor for corners
-        corner_factor = ug_props.extrusion_corner_factor
-        # Factor used in scaling length according to area
-        area_factor = ug_props.extrusion_area_factor
-        # Factor used to limit length when growing length
-        growth_scale_factor = ug_props.extrusion_growth_scale_factor
-
-        elens = [] # Extension lengths, to be calculated
-        for a, ic, mc in zip(area_coeffs, is_corners, max_convexities):
-            factor = 1.0 # Cumulative length factor
-
-            # Convexity scaling is done always
-            factor *= get_convexity_factor(mc)
-
-            # Other scalings are done only for non-fixed extrusions
-            if not ug_props.extrusion_uses_fixed_initial_directions:
-                # Area change scaling
-                if a > 1.0:
-                    # Area change suggests extension of step legth. Scale
-                    # area coefficient by growth scaling factor < 1.0 to reduce
-                    # zigzagging in concave extrusion fronts.
-                    afac = (a - 1.0) * growth_scale_factor * area_factor + 1.0
-                else:
-                    afac = (a - 1.0) * area_factor + 1.0
-                factor *= afac
-
-                # Special scaling for corners
-                if ic:
-                    factor = corner_factor
-
-            step_length = ext_len * factor
-            elens.append(step_length)
-
-        return elens
-
-    # elens = calculate_extension_length(area_coeffs, is_corners, max_convexities)
 
     def cast_vertices(bm, base_verts, speeds):
         '''Create new top vertices from base vertices in argument bmesh, by
@@ -1007,7 +944,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
     def evolve_substep(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                        intvpairs0, intvpairs1, top_faces, fis_of_vis, \
-                       coords0, vnspeeds0, prev_pvgm_target_cos):
+                       coords0, vnspeeds0, prev_pvgm_target_cos, area_coeffs):
         '''Evolve extrusion by one substep'''
 
         # Help functions
@@ -1385,13 +1322,17 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             if fulldebug:
                 l.debug("fac1 %f, fac2 %f" % (fac1, fac2))
+                l.debug("mgf %f, cf %f" % (mgf, cf))
 
             target_speed = target2 - v.co
             return target_speed
 
 
-        def limit_target_speed(oldv, oldspeed, target_speed, convexity_sum, min_velocity, coord0, vnspeed0, tgvel):
-            '''Constrain velocity and direction of speed'''
+        def control_target_speed(oldv, oldspeed, target_speed, \
+                                 convexity_sum, min_velocity, coord0, \
+                                 vnspeed0, tgvel, area_coeff):
+            '''Constrain and adjust velocity and direction of speed'''
+            from math import sqrt
             ug_props = bpy.context.scene.ug_props
 
             # Maximum allowed relative velocity change
@@ -1436,7 +1377,10 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             vec = limited_co - oldv.co
             vec.normalize()
-            target_speed = vel * vec
+            # Speed-up factor from surrounding top face area change
+            speedup = sqrt(max(1.0, area_coeff))
+            unscaled_target_speed = vel * vec
+            target_speed = speedup * unscaled_target_speed
 
             # Limit by maximum allowed relative velocity among neighbours
             # TODO: Remove?
@@ -1444,7 +1388,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             #if target_speed.length > max_vel:
             #    target_speed = max_vel * vec.normalized()
 
-            return target_speed
+            return target_speed, unscaled_target_speed
 
 
         #######################################################
@@ -1467,17 +1411,20 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         convexity_sums = calculate_convexity_sums(bm, top_verts, top_faces)
 
         new_speeds = [] # new speed vectors, to be calculated
+        unscaled_new_speeds = [] # new speed vectors (without area change scaling)
 
         for vi, v in enumerate(top_verts):
             # Speed of corner vertices are not changed
             if is_corners[vi]:
                 new_speeds.append(speeds[vi])
+                unscaled_new_speeds.append(speeds[vi])
                 continue
 
             # Boundary vertices use plain vertex normal speed
             if is_boundaries[vi]:
                 # TODO: Restore boundary neighbour interpolation method?
                 new_speeds.append(vnspeeds[vi])
+                unscaled_new_speeds.append(vnspeeds[vi])
                 continue
 
             if fulldebug:
@@ -1532,14 +1479,17 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             # Calculate a new target speed vector for this vertex
             vn_target_co = v.co + vnspeeds[vi]
             target_speed = get_target_speed(v, convexity_sums[vi], anc, vn_target_co, pvgm_target_co, convex_target_co)
+
             # Calculate velocity of pvgm target speed
             tgvec = pvgm_target_co - prev_pvgm_target_cos[vi]
             tgvel = tgvec.length
             # Save pvgm target coordinates for next round
             prev_pvgm_target_cos[vi] = pvgm_target_co
 
-            # Limit speed velocity and direction
-            target_speed = limit_target_speed(v, speeds[vi], target_speed, convexity_sums[vi], min_velocity, coords0[vi], vnspeeds0[vi], tgvel)
+            # Control speed velocity and direction
+            target_speed, unscaled_target_speed = control_target_speed( \
+                v, speeds[vi], target_speed, convexity_sums[vi], min_velocity, \
+                coords0[vi], vnspeeds0[vi], tgvel, area_coeffs[vi])
 
             if fulldebug:
                 l.debug("vn_target_co %s" % str(vn_target_co))
@@ -1557,6 +1507,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                         + "velocity %f" % target_speed.length)
 
             new_speeds.append(target_speed)
+            unscaled_new_speeds.append(unscaled_target_speed)
             bmp.free()
             del bt
 
@@ -1566,7 +1517,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         # TODO: Not needed? Remove
         for f in top_faces:
             f.normal_update()
-        return bm, new_speeds, prev_pvgm_target_cos
+        return bm, unscaled_new_speeds, prev_pvgm_target_cos
 
 
     def update_trajectory_mesh(bmt, verts):
@@ -1602,7 +1553,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             bm, speeds, prev_pvgm_target_cos = evolve_substep( \
                 bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                 intvpairs0, intvpairs1, top_faces, base_fis_of_vis, \
-                coords0, vnspeeds0, prev_pvgm_target_cos)
+                coords0, vnspeeds0, prev_pvgm_target_cos, \
+                area_coeffs)
             if ug_props.extrusion_create_trajectory_object:
                 bmt = update_trajectory_mesh(bmt, top_verts)
 
