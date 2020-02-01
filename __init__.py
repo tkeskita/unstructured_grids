@@ -150,16 +150,16 @@ class UGProperties(bpy.types.PropertyGroup):
         default=10,
         min=1, max=10000000
     )
-    extrusion_substeps: bpy.props.IntProperty(
-        name="Extrusion Substeps",
-        description="Number of Internal Substeps per Layer",
-        default=5,
-        min=1, max=100
+    extrusion_courant_number: bpy.props.FloatProperty(
+        name="Extrusion Courant Number",
+        description="Courant Number Used to Calculate Iteration Step Size",
+        default=0.5,
+        min=1e-6, max=1.0
     )
     # TODO: Use degrees for angle definition
     extrusion_deviation_angle_min: bpy.props.FloatProperty(
-        name="Minimum Substep cos(angle)",
-        description="Minimum Allowed Cosine of Angle for Every Substep" \
+        name="Iteration cos(angle)",
+        description="Minimum Allowed Cosine of Angle for an Iteration" \
         + "for Change of Directions",
         default=0.98,
         min=0.0, max=1.0
@@ -339,7 +339,7 @@ class VIEW3D_PT_UG_GUI:
 
         if not ug_props.extrusion_uses_fixed_initial_directions:
             row = layout.row()
-            row.prop(ug_props, "extrusion_substeps", text="Substeps")
+            row.prop(ug_props, "extrusion_courant_number")
             row = layout.row()
             row.prop(ug_props, "extrusion_deviation_angle_min")
             row = layout.row()

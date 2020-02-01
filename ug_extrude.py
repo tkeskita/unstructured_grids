@@ -26,6 +26,7 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 fulldebug = False # Set to True if you wanna see walls of logging debug
+print_iterations = True # Set to True to print iteration stats for hyperbolic extrusion
 LARGE = 100.0 # Cut-off for large values for weight function
 
 # Summary of extrusion method: Extrusion starts from selected mesh
@@ -36,17 +37,31 @@ LARGE = 100.0 # Cut-off for large values for weight function
 # of base faces produces one side face by connecting old and new vertices.
 # Finally top faces are added by creating faces connecting new vertices,
 # to close each new cell.
-
+#
+# There are two extrustion modes:
+# 1. Fixed Extrusion Method - uses vertex normal direction and
+#    extrusion velocities constant. Simple, mostly uncontrollable and
+#    relatively fast method.
+# 2. Hyperbolic Extrusion Method - adjusts extrusion direction and
+#    velocities of individual vertices according to surrounding topology.
+#    Adaptive but slow and experimental method, with lots of controls.
+#
 # Ideas to optimize extrusion speed further:
 # - don't create internal faces into mesh
 # - don't create top faces into mesh until last layer
 
 # TODO: Autosplit twisted faces after some threshold?
 
+# Notes for Hyperbolic Extrusion:
+# Unit of velocity is meters per cell layer. Iteration step size
+# unit is fraction of cell layer. One way to think about it: If one
+# cell layer was extruded in one second, then velocity unit would be
+# in meters per second.
+
 # Nomenclature: (TODO: Add more terms)
 #
-# substep = internal iteration step in hyperbolic extrusion of a cell layer
-# velocity = measure of speed (scalar value, in unit of m/substep)
+# iteration = internal iteration step in hyperbolic extrusion of a cell layer
+# velocity = measure of speed (scalar value, in unit of m/layer)
 # speed = velocity * direction normal vector (vector)
 
 class UG_OT_ExtrudeCells(bpy.types.Operator):
@@ -72,6 +87,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         speeds = [] # Extrusion speed vectors, can be updated per layer
         new_ugfaces = [] # List of new ugfaces created in extrusion
         prev_pvgm_target_cos = [] # Previous pvgm target coordinates
+        vel_hists = [] # Velocity histories list of lists
 
         import bmesh
         import time
@@ -89,18 +105,23 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
             t0 = time.clock()
             is_last_layer = (i == (ug_props.extrusion_layers - 1))
             if i == 0:
-                bm, bmt, nf, speeds, new_ugfaces, prev_pvgm_target_cos = \
+                iter, bm, bmt, nf, speeds, new_ugfaces, \
+                prev_pvgm_target_cos, vel_hists = \
                     extrude_cells(bm, bmt, initial_faces, speeds, \
                                   new_ugfaces, initial_face_areas, \
-                                  is_last_layer, prev_pvgm_target_cos)
+                                  is_last_layer, prev_pvgm_target_cos, \
+                                  vel_hists)
             else:
-                bm, bmt, nf, speeds, new_ugfaces, prev_pvgm_target_cos = \
+                iter, bm, bmt, nf, speeds, new_ugfaces, \
+                prev_pvgm_target_cos, vel_hists = \
                     extrude_cells(bm, bmt, [], speeds, \
                                   new_ugfaces, initial_face_areas, \
-                                  is_last_layer, prev_pvgm_target_cos)
+                                  is_last_layer, prev_pvgm_target_cos, \
+                                  vel_hists)
             t1 = time.clock()
             l.debug("Extruded layer %d, " % (i + 1) \
                     + "cells added: %d " % n \
+                    + "(%d iterations) " % iter \
                     + "(%d cells/s)" % int(nf/(t1-t0)))
             n += nf
 
@@ -255,7 +276,8 @@ def check_hanging_face_verts(bm):
 
 
 def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
-                  initial_face_areas, is_last_layer, prev_pvgm_target_cos):
+                  initial_face_areas, is_last_layer, prev_pvgm_target_cos, \
+                  vel_hists):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose direction
     is reversed at the end.
@@ -547,8 +569,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         import math
         ug_props = bpy.context.scene.ug_props
 
-        # Base extension length of a substep
-        ext_len = ug_props.extrusion_thickness / float(ug_props.extrusion_substeps)
+        # Layer thickness
+        ext_len = ug_props.extrusion_thickness
 
         # Calculate new extrusion directions
         speeds = []
@@ -576,9 +598,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         return speeds
 
     if len(speeds) == 0:
+        # Initial speeds from vertex normal speeds
         speeds = get_vertex_normal_speeds(base_verts, base_faces, \
                                           base_fis_of_vis)
-
+        # Initialize velocity histories
+        for s in speeds:
+            vel = s.length
+            vel_hists.append([vel, vel, vel])
 
 
     def calculate_convexity_sums(bm, verts, faces):
@@ -739,7 +765,35 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         fi_areas, initial_face_areas, base_fis_of_vis)
 
 
-    def cast_vertices(bm, base_verts, speeds):
+    def get_delta_layer_frac(layer_frac, top_faces, max_velocity):
+        '''Calculate iteration step size (unit 1/layer) using Courant
+        number. layer_frac is the current fraction value,
+        top_faces are BMesh faces, and max_velocity is the maximum
+        velocity in units m/layer.
+        '''
+
+        from .ug_checks import get_edge_stats_from_bmesh_faces
+
+        # Get minimum edge length
+        min_len, dummy1, dummy2 = get_edge_stats_from_bmesh_faces(top_faces)
+
+        # Courant number
+        courant = ug_props.extrusion_courant_number
+
+        # Iteration step size which should provide stable progress
+        df = courant * min_len / max_velocity
+
+        # Do not overshoot layer thickness
+        EPS = 1e-8 # Small number for rounding errors
+        if (layer_frac + df) > 1.0:
+            df = 1.0 - layer_frac + EPS
+
+        return df
+
+    # Initial step size for hyperbolic extrusion
+    df = 1e-3
+
+    def cast_vertices(bm, base_verts, speeds, df):
         '''Create new top vertices from base vertices in argument bmesh, by
         casting each vertex towards speeds (length elen). Returns updated bmesh,
         top vertices and map from base verts to new top verts.
@@ -749,15 +803,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         ug_props = bpy.context.scene.ug_props
         top_verts = []
 
-        # Full step for fixed extrusion, small initial step for hyperbolic
-        if ug_props.extrusion_uses_fixed_initial_directions:
-            speed_scale = 1.0
-        else:
-            speed_scale = 0.001
-
         # Cast new vertices very small distance ahead
         for i in range(len(base_verts)):
-            newco = base_verts[i].co + speed_scale * speeds[i]
+            if ug_props.extrusion_uses_fixed_initial_directions:
+                newco = base_verts[i].co + speeds[i]
+            else:
+                newco = base_verts[i].co + df * speeds[i]
             v2 = bm.verts.new(newco)
             vert_map[base_verts[i]] = v2
             top_verts.append(v2)
@@ -769,7 +820,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         return bm, top_verts, vert_map
 
     bm, top_verts, vert_map = cast_vertices(\
-        bm, base_verts, speeds)
+        bm, base_verts, speeds, df)
 
 
     def create_mesh_faces(bm, edge2sideface_index, vert_map, base_faces, \
@@ -942,20 +993,30 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
     # Formation Flying Extrusion Algorithm #
     ########################################
 
-    def evolve_substep(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
-                       intvpairs0, intvpairs1, top_faces, fis_of_vis, \
-                       coords0, vnspeeds0, prev_pvgm_target_cos, area_coeffs):
-        '''Evolve extrusion by one substep'''
+    def evolve_iteration(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
+                         intvpairs0, intvpairs1, top_faces, fis_of_vis, \
+                         coords0, vnspeeds0, prev_pvgm_target_cos, \
+                         area_coeffs, layer_frac, prev_df, ave_vels):
+        '''Evolve extrusion by one iteration'''
 
         # Help functions
 
-        def get_estimated_cos(verts, speeds):
+        def get_max_vec_length(vectors):
+            '''Calculate maximum length of vectors'''
+
+            max_len = 0.0
+            for vec in vectors:
+                if vec.length > max_len:
+                    max_len = vec.length
+            return max_len
+
+        def get_estimated_cos(verts, speeds, df):
             '''Estimate next locations of vertices based on current locations and
             speeds
             '''
             estimated_cos = []
             for v, s in zip(verts, speeds):
-                estimated_cos.append(v.co + s)
+                estimated_cos.append(v.co + df * s)
             return estimated_cos
 
         def get_bmp(vi, top_faces, top_verts, fis_of_vis, anvis_of_vi, \
@@ -1070,7 +1131,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             return hit_co
 
-        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bmp, bt, vnspeeds):
+        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bmp, bt, vnspeeds, df):
             '''Calculate geometric mean from vertex neighbours' locations and
             speeds. Target coordinate is projected up from planes.
             '''
@@ -1080,12 +1141,12 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             for i in anvis:
                 v = top_verts[i]
                 s = speeds[i]
-                co += v.co + s
+                co += v.co + df * s
             co /= float(len(anvis))
 
             # If target is below planes, project it above
             if not is_above_planes(cv, vnspeeds[vi], co, bmp, bt):
-                co = project_co_to_planes(cv, co, bt, vnspeeds[vi])
+                co = project_co_to_planes(cv, co, bt, df * vnspeeds[vi])
             return co
 
         def project_pvs_pvspeeds(vi, verts, anvis, speeds):
@@ -1120,7 +1181,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             return pvs, pvspeeds
 
         def get_target_cos(v, vi, vpairs0, vpairs1, estimated_cos, \
-                           bmp, bt, vnspeed):
+                           bmp, bt, vnspeed, df):
             '''First return value is target coordinates (middle coordinates
             which are projected above planes) for all vpairs.
             Second return value is booleans for middle coordinates
@@ -1140,19 +1201,19 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
                 # If needed, project co above planes and vertex normal plane
                 if not is_above:
-                    co = project_co_to_planes(v, co, bt, vnspeed)
+                    co = project_co_to_planes(v, co, bt, df * vnspeed)
 
                 mid_cos.append(co)
                 vec = estimated_cos[v1] - estimated_cos[v0]
                 vplengths.append(vec.length)
             return mid_cos, is_aboves, vplengths
 
-        def get_cut_substeps(vpairs0, vpairs1, vimap, pvs, pvspeeds):
-            '''Calculate how many substeps it would take for intersection to
-            happen for each neighbour vertex pair if neighbours
-            continued with their current pspeeds
+        def get_cut_layers(vpairs0, vpairs1, vimap, pvs, pvspeeds):
+            '''Calculate how many layer extrusions it would take for
+            intersection to happen for each neighbour vertex pair if
+            neighbours continued with their current pspeeds
             '''
-            cut_substeps = [] # estimated substeps until intersection
+            cut_layers = [] # estimated layers until intersection
 
             # Process each vertex pair
             for i, j in zip(vpairs0, vpairs1):
@@ -1161,7 +1222,7 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 s0 = pvspeeds[vimap[i]]
                 s1 = pvspeeds[vimap[j]]
 
-                # Calculate substeps until intersection
+                # Calculate layers until intersection
                 vec0 = co1 - co0 # vector between verts
                 vdir = vec0.normalized()
                 q0 = (s0 @ vdir) * vdir # speed component aligned with vdir
@@ -1170,24 +1231,24 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 vec1 = (co1 + q1) - (co0 + q0) # vector between moved verts
 
                 # If distance is increasing (not going to intersect),
-                # then set cut_substep to LARGE
+                # then set cut_layer to LARGE
                 SAFETY = 0.999 # avoid singularity
                 if vec1.length > SAFETY * vec0.length:
-                    cut_substeps.append(LARGE)
+                    cut_layers.append(LARGE)
 
-                # Otherwise calculate substeps until intersection
+                # Otherwise calculate layers until intersection
                 else:
                     cut_step = vec0.length / (vec0.length - vec1.length)
                     cut_step = min(LARGE, cut_step)
-                    cut_substeps.append(cut_step)
-            return cut_substeps
+                    cut_layers.append(cut_step)
+            return cut_layers
 
         def get_ave_neigh_convexity(convexity_sums, anvis):
             '''Calculate average convexity among neighbours'''
             cs = [convexity_sums[x] for x in anvis]
             return sum(cs) / float(len(cs))
 
-        def get_convex_weights(is_aboves, cut_substeps, vplengths):
+        def get_convex_weights(is_aboves, cut_layers, vplengths):
             '''Calculate weights for target coordinates. Weights are used to
             calculate a target coordinate and speed.
             '''
@@ -1205,57 +1266,40 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             # Weights for target coordinates
             if len(is_aboves) > 0:
                 max_vplen = max(vplengths)
-                for ia, cs, vl in zip(is_aboves, cut_substeps, vplengths):
+                for ia, cs, vl in zip(is_aboves, cut_layers, vplengths):
                     # Weight option 1: Closeness of vpair
                     vplen_fac = (1.0 + 10.0 * (vl / max_vplen)) # TODO: Parametrize
                     wo1 = weight(vplen_fac)
-                    # Weight option 2: Value of cut substeps
+                    # Weight option 2: Value of cut layers
                     wo2 = weight(cs)
                     w = max(wo1, wo2)
                     weights.append(w)
                     if fulldebug:
                         l.debug("vfrac %f " % (vl / max_vplen) \
                                 + "closeness %f " % wo1 \
-                                + "cut_substeps %f " % wo2 \
+                                + "cut_layers %f " % wo2 \
                                 + "w %f" % w)
 
             return weights
 
-        def get_convex_speeds(v, target_cos, is_aboves, cut_substeps, cfac):
-            '''Calculate target speeds for convex targets'''
-
-            from mathutils import Vector
-            ug_props = bpy.context.scene.ug_props
-
-            speeds = []
-            # ivpairs data exists, get velocity
-            if len(is_aboves) > 0:
-                for co, ia, cs in zip(target_cos, is_aboves, cut_substeps):
-                    # Calculate velocity, scale speed
-                    vec = co - v.co
-                    # vel = max(vec.length, min_velocity) * cfac
-                    vel = vec.length * cfac
-                    speeds.append(vel * vec.normalized())
-
-            return speeds
-
-        def get_convex_target(v, convex_speeds, convex_weights, pvgm_target_co):
-            '''Calculate convex target from speeds and weights'''
+        def get_convex_target(v, target_cos, convex_weights, pvgm_target_co):
+            '''Calculate convex target from target coordinates and weights'''
 
             # Default to geometric mean if there is no other data
-            if not convex_speeds:
+            if not target_cos:
                 return pvgm_target_co
 
             ug_props = bpy.context.scene.ug_props
             from mathutils import Vector
-            target_speed = Vector((0, 0, 0))
+            convex_target_co = Vector((0, 0, 0))
 
-            # Target is sum of weighted speeds
-            for s, w in zip(convex_speeds, convex_weights):
-                target_speed += s * w
-            target_speed /= sum(convex_weights)
-            return v.co + target_speed
+            # Target is sum of weighted coordinates
+            for co, w in zip(target_cos, convex_weights):
+                convex_target_co += co * w
+            convex_target_co /= sum(convex_weights)
+            return convex_target_co
 
+        # TODO: Remove
         def get_min_neighbour_vel(speeds, anvis_of_vi):
             '''Calculate minimum neighbour velocity'''
             vels = [x.length for x in get_items_from_list(speeds, anvis_of_vi)]
@@ -1277,6 +1321,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             # Project u to vdir normal plane
             q = (u @ vdir) * vdir # u component aligned with vdir
+            # Mirror q if direction points backwards to prevent stuttering
+            if cos_alpha < 0.0:
+                q.negate()
             p = u - q # u component normal to vdir
 
             # Decrease angle by moving co on vdir normal plane
@@ -1289,8 +1336,8 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             # New coordinates
             return baseco + u
 
-        def get_target_speed(v, convexity_sum, anc, vn_target, pvgm_target, convex_target):
-            '''Calculate an unconstrained target speed from several options'''
+        def get_target_co(v, convexity_sum, anc, vn_target, pvgm_target, convex_target):
+            '''Calculate an unconstrained target coordinate from several options'''
 
             def mix_f(x, cut_off):
                 '''Linear mixing function for [0, cut_off]'''
@@ -1324,51 +1371,64 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 l.debug("fac1 %f, fac2 %f" % (fac1, fac2))
                 l.debug("mgf %f, cf %f" % (mgf, cf))
 
-            target_speed = target2 - v.co
-            return target_speed
+            return target2
 
 
-        def control_target_speed(oldv, oldspeed, target_speed, \
+        def control_target_speed(oldv, oldspeed, target_co, \
                                  convexity_sum, min_velocity, coord0, \
-                                 vnspeed0, tgvel, area_coeff):
+                                 vnspeed0, tgvel, area_coeff, df, \
+                                 ave_vel, layer_frac, prev_df):
             '''Constrain and adjust velocity and direction of speed'''
             from math import sqrt
             ug_props = bpy.context.scene.ug_props
 
-            # Maximum allowed relative velocity change
-            mrv = 1.0 + convexity_sum * 0.5 # TODO: Parametrize acceleration factor
-            mrv *= ug_props.extrusion_max_relative_velocity
+            # Calculate unconstrained (maximum wanted) velocity to
+            # reach target coordinates
+            vec = target_co - oldv.co
+            # Velocity is calculated from max_df to prevent acceleration peaks
+            # at last step which can be very small compared to other steps.
+            max_df = max(df, prev_df)
+            vel = vec.length / max_df
+            target_len = vec.length
 
             # Use minimum velocity if this vertex is not convex
-            vel = target_speed.length
-            vel0 = vel
-            EPS = 1e-4
+            EPS = 1e-4 # Zero tolerance for convexity
             if convexity_sum < EPS:
                 vel = min_velocity
 
-            # Limit velocity change rate in relation to old speed
-            oldvel = oldspeed.length
-            vel = min(vel, oldvel * mrv) # Clamp upper limit
-            vel = max(vel, oldvel / mrv) # Clamp lower limit # TODO: No need for braking?
+            #l.debug("=== ave_vel %f, vel %f" % (ave_vel, vel))
 
-            # Limit velocity with target speed velocity
-            max_tg_ratio = 8.0 # TODO: Parametrize?
+            # Limit acceleration in relation to previous average velocity
+            # Estimate acceleration using average velocity
+            acc = vel - ave_vel
+            uc_acc = acc
+            vel_factor = 20.0 # TODO: Parametrize?
+            # Clamp acc with maximum allowed acceleration
+            thickness = ug_props.extrusion_thickness
+            #max_acc = thickness * (1.0 + convexity_sum) * vel_factor
+            max_acc = thickness * vel_factor
+            acc = min(acc, max_acc)
+            # Clamp acc with minimum allowed deceleration
+            min_acc = -thickness * vel_factor
+            acc = max(acc, min_acc)
+
+            #l.debug("=== df %f: uc_acc %f, acc %f" % (df, uc_acc, acc))
+
+            # Calculate acceleration limited velocity
+            vel = oldspeed.length + acc * df
+
+            # Maximum allowed velocity limit (from target speed velocity)
+            max_tg_ratio = 4.0 # TODO: Parametrize?
+
             vel = min(vel, max_tg_ratio * tgvel)
 
-            # Limit overshooting by using geometric target speed (tgvel) as cut-off
-            if vel > tgvel:
-                max_cu_ratio = 0.5 # TODO: Parametrize?
-                vel_ratio = vel / vel0
-                if vel_ratio > max_cu_ratio:
-                    vel = max_cu_ratio * vel0
-
-            # Ensure minimum velocity
+            # Minimum allowed velocity limit
             vel = max(vel, min_velocity)
 
             # Limit the change of direction angle compared to previous direction
             min_cos_alpha = ug_props.extrusion_deviation_angle_min
             limited_co = limit_co_by_angle_deviation \
-                         (oldv.co + target_speed, oldv.co, oldspeed, min_cos_alpha)
+                         (target_co, oldv.co, oldspeed, min_cos_alpha)
 
             # Limit coordinates within accepted region cone
             cone_cos_alpha = ug_props.extrusion_cone_angle
@@ -1377,10 +1437,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             vec = limited_co - oldv.co
             vec.normalize()
+
             # Speed-up factor from surrounding top face area change
-            speedup = sqrt(max(1.0, area_coeff))
+            speedup = max(1.0, sqrt(area_coeff))
             unscaled_target_speed = vel * vec
-            target_speed = speedup * unscaled_target_speed
+            target_speed = unscaled_target_speed * speedup
+
+            #l.debug(">>> === FINAL VELOCITY %f === <<<" % (speedup * vel))
 
             # Limit by maximum allowed relative velocity among neighbours
             # TODO: Remove?
@@ -1391,21 +1454,28 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             return target_speed, unscaled_target_speed
 
 
-        #######################################################
-        # Main Substep Loop of the Formation Flying Algorithm #
-        #######################################################
+        #########################################################
+        # Main Iteration Loop of the Formation Flying Algorithm #
+        #########################################################
+
+        # Get current maximum velocity
+        max_velocity = get_max_vec_length(speeds)
+
+        # Calculate step size from Courant and add to layer fraction
+        df = get_delta_layer_frac(layer_frac, top_faces, max_velocity)
+        layer_frac += df
 
         # Calculate vertex normal speeds
         vnspeeds = get_vertex_normal_speeds(top_verts, top_faces, \
                                             base_fis_of_vis)
 
         # Calculate estimated_cos = estimate where vertices would be
-        # after this substep
-        estimated_cos = get_estimated_cos(top_verts, speeds)
+        # after this iteration
+        estimated_cos = get_estimated_cos(top_verts, speeds, df)
 
         # Calculate np_cos = estimate where vertices would be if
         # vertex normal speeds (minimum velocity) were to be used
-        np_cos = get_estimated_cos(top_verts, vnspeeds)
+        np_cos = get_estimated_cos(top_verts, vnspeeds, df)
 
         # Calculate convexity_sums = sum of convex edge convexity values per vertex
         convexity_sums = calculate_convexity_sums(bm, top_verts, top_faces)
@@ -1428,7 +1498,6 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                 continue
 
             if fulldebug:
-                l.debug("-----")
                 l.debug("Starting on internal vi %d index %d" % (vi, v.index))
 
             # Generate bmesh and bvhtree of projected faces surrounding this
@@ -1437,10 +1506,9 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
                               anvis_of_vi, np_cos)
 
             # Calculate projected geometric mean target coordinates
-            min_velocity = ug_props.extrusion_thickness \
-                           / float(ug_props.extrusion_substeps)
+            min_velocity = ug_props.extrusion_thickness
             pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
-                                                speeds, bmp, bt, vnspeeds)
+                                                speeds, bmp, bt, vnspeeds, df)
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
@@ -1451,57 +1519,64 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             # vplengths = lengths between vpairs
             target_cos, is_aboves, vplengths = \
                 get_target_cos(v, vi, intvpairs0[vi], intvpairs1[vi], \
-                               estimated_cos, bmp, bt, vnspeeds[vi])
+                               estimated_cos, bmp, bt, vnspeeds[vi], df)
 
-            # Calculate amount of substeps until vpairs intersect
+            # Calculate layers extruded until vpairs intersect
             vimap = {} # Map from vi index to anvis index
             for i, x in enumerate(anvis_of_vi[vi]):
                 vimap[x] = i
-            cut_substeps = get_cut_substeps(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
+            cut_layers = get_cut_layers(intvpairs0[vi], intvpairs1[vi], vimap, pvs, pvspeeds)
 
             # Calculate average neighbour convexity sum
             anc = get_ave_neigh_convexity(convexity_sums, anvis_of_vi[vi])
 
             # Calculate convex target weights
-            convex_weights = get_convex_weights(is_aboves, cut_substeps, vplengths)
+            convex_weights = get_convex_weights(is_aboves, cut_layers, vplengths)
 
             # Speed up factor for convex vertices
-            csf = ug_props.extrusion_convex_speed_factor
-            cfac = (1.0 + convexity_sums[vi] * csf)
+            # TODO: Remove?
+            #csf = ug_props.extrusion_convex_speed_factor
+            #cfac = (1.0 + convexity_sums[vi] * csf)
 
-            # Calculate convex target speeds and target
-            convex_speeds = get_convex_speeds(v, target_cos, is_aboves, cut_substeps, cfac)
-            convex_target_co = get_convex_target(v, convex_speeds, convex_weights, pvgm_target_co)
+            # Calculate convex target
+            convex_target_co = get_convex_target(v, target_cos, convex_weights, pvgm_target_co)
 
             # Calculate minimum neighbour velocity to limit speed
             #min_neighbour_vel = get_min_neighbour_vel(speeds, anvis_of_vi[vi])
 
             # Calculate a new target speed vector for this vertex
-            vn_target_co = v.co + vnspeeds[vi]
-            target_speed = get_target_speed(v, convexity_sums[vi], anc, vn_target_co, pvgm_target_co, convex_target_co)
-
+            vn_target_co = v.co + df * vnspeeds[vi]
+            target_co = get_target_co(v, convexity_sums[vi], anc, vn_target_co, \
+                                      pvgm_target_co, convex_target_co)
             # Calculate velocity of pvgm target speed
             tgvec = pvgm_target_co - prev_pvgm_target_cos[vi]
-            tgvel = tgvec.length
+            EPS = 1e-12 # Zero tolerance for step size
+            if prev_df < EPS:
+                tgvel = min_velocity
+            else:
+                tgvel = tgvec.length / df
+
+            # Control speed (velocity and direction)
+            target_speed, unscaled_target_speed = control_target_speed( \
+                v, speeds[vi], target_co, convexity_sums[vi], min_velocity, \
+                coords0[vi], vnspeeds0[vi], tgvel, area_coeffs[vi], df, \
+                ave_vels[vi], layer_frac, prev_df)
+
             # Save pvgm target coordinates for next round
             prev_pvgm_target_cos[vi] = pvgm_target_co
 
-            # Control speed velocity and direction
-            target_speed, unscaled_target_speed = control_target_speed( \
-                v, speeds[vi], target_speed, convexity_sums[vi], min_velocity, \
-                coords0[vi], vnspeeds0[vi], tgvel, area_coeffs[vi])
-
             if fulldebug:
+                l.debug("max_velocity %f" % max_velocity)
+                l.debug("df %f layer_frac %f" % (df, layer_frac))
                 l.debug("vn_target_co %s" % str(vn_target_co))
                 l.debug("pvgm_target_co %s" % str(pvgm_target_co))
                 l.debug("convex_target_co %s" % str(convex_target_co))
                 l.debug("-- is_aboves %s" % str(is_aboves))
                 l.debug("-- target_cos %s" % str(target_cos))
-                l.debug("-- cut_substeps %s" % str(cut_substeps))
+                l.debug("-- cut_layers %s" % str(cut_layers))
                 l.debug("-- convex_weights %s" % str(convex_weights))
                 l.debug("convexity_sum %f" % convexity_sums[vi] \
-                        + ", anc %f" % anc \
-                        + ", cfac %f" % cfac)
+                        + ", anc %f" % anc)
                 l.debug("tgvel %f" % tgvel)
                 l.debug("FINAL target_co %s " % str(v.co + target_speed) \
                         + "velocity %f" % target_speed.length)
@@ -1513,11 +1588,13 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
 
         # Evolve vertex positions and return new speeds
         for v, s in zip(top_verts, new_speeds):
-            v.co += s
+            v.co += s * df
+
         # TODO: Not needed? Remove
         for f in top_faces:
             f.normal_update()
-        return bm, unscaled_new_speeds, prev_pvgm_target_cos
+
+        return bm, unscaled_new_speeds, prev_pvgm_target_cos, layer_frac, df
 
 
     def update_trajectory_mesh(bmt, verts):
@@ -1533,13 +1610,32 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
             bmt.edges.new([v0, nv])
         return bmt
 
-    # Call the extrusion substep in loop
+    def update_velocity_histories(vel_hists, speeds):
+        '''Update velocity histories using current speeds'''
+        ave_vels = []
+        for i,s in enumerate(speeds):
+            vel_hists[i][2] = vel_hists[i][1]
+            vel_hists[i][1] = vel_hists[i][0]
+            vel_hists[i][0] = s.length
+        return vel_hists
+
+    def get_velocity_averages(vel_hists):
+        '''Calculate average velocities from velocity histories'''
+        ave_vels = []
+        for i in range(len(vel_hists)):
+            ave_vel = sum(vel_hists[i]) / 3.0
+            ave_vels.append(ave_vel)
+        return ave_vels
+
+    # Call the extrusion iteration in loop
+    iter = 1 # Iteration counter
     ug_props = bpy.context.scene.ug_props
     if not ug_props.extrusion_uses_fixed_initial_directions:
 
         # Save vertex normal speeds for cone limitation
         vnspeeds0 = get_vertex_normal_speeds(top_verts, top_faces, \
                                              base_fis_of_vis)
+
         # Save top vertex locations for cone limitation
         coords0 = [v.co for v in top_verts]
 
@@ -1547,16 +1643,26 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         if not prev_pvgm_target_cos:
             prev_pvgm_target_cos = [v.co for v in top_verts]
 
-        # Carry out substeps
-        for j in range(ug_props.extrusion_substeps):
-            if fulldebug: l.debug("Extrusion substep %d" % j)
-            bm, speeds, prev_pvgm_target_cos = evolve_substep( \
+        # Carry out iterations until one whole layer is done
+        layer_frac = 0.0 # Fraction of simulated layer
+        prev_df = 0.0 # Previous step size [1/layer]
+        while layer_frac < 1.0:
+            if fulldebug: l.debug("===== Extrusion iteration %d =====" % iter)
+            ave_vels = get_velocity_averages(vel_hists)
+            bm, speeds, prev_pvgm_target_cos, layer_frac, prev_df = evolve_iteration( \
                 bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                 intvpairs0, intvpairs1, top_faces, base_fis_of_vis, \
                 coords0, vnspeeds0, prev_pvgm_target_cos, \
-                area_coeffs)
+                area_coeffs, layer_frac, prev_df, ave_vels)
             if ug_props.extrusion_create_trajectory_object:
                 bmt = update_trajectory_mesh(bmt, top_verts)
+
+            if print_iterations:
+                max_vel = max([x.length for x in speeds])
+                l.debug("iter %d: prev_df %f, max_vel %f" % (iter, prev_df, max_vel))
+
+            iter += 1
+            vel_hists = update_velocity_histories(vel_hists, speeds)
 
 
     def add_faces_to_trajectory_mesh(bmt, nv0, vis_of_fis):
@@ -1614,4 +1720,5 @@ def extrude_cells(bm, bmt, initial_faces, speeds, new_ugfaces, \
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
 
-    return bm, bmt, len(base_faces), speeds, new_ugfaces, prev_pvgm_target_cos
+    return iter - 1, bm, bmt, len(base_faces), speeds, new_ugfaces, \
+        prev_pvgm_target_cos, vel_hists
