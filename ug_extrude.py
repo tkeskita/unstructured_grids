@@ -1216,7 +1216,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             return hit_co
 
-        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bmp, bt, vnspeeds, df):
+        def get_pvgm_target_co(vi, top_verts, anvis, speeds, bmp, bt, vnspeeds, convexity_sum):
             '''Calculate geometric mean from vertex neighbours' locations and
             speeds. Target coordinate is projected up from planes.
             '''
@@ -1226,12 +1226,17 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             for i in anvis:
                 v = top_verts[i]
                 s = speeds[i]
-                co += v.co + df * s
+                co += v.co + EPS * s
             co /= float(len(anvis))
 
             # If target is below planes, project it above
             if not is_above_planes(cv, vnspeeds[vi], co, bmp, bt):
-                co = project_co_to_planes(cv.co, co, bt, df * vnspeeds[vi])
+                co = project_co_to_planes(cv.co, co, bt, EPS * vnspeeds[vi])
+
+            # Extra projection for convex verts
+            cfac = 10.0 # TODO: Parametrize?
+            co += cfac * convexity_sum * vnspeeds[vi]
+
             return co
 
         def project_pvs_pvspeeds(vi, verts, anvis, speeds):
@@ -1266,7 +1271,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             return pvs, pvspeeds
 
         def get_convex_target_cos(v, vi, vpairs0, vpairs1, estimated_cos, \
-                           bmp, bt, vnspeed, df):
+                           bmp, bt, vnspeed, convexity_sum):
             '''First return value is target coordinates (middle coordinates
             which are projected above planes) for all vpairs.
             Second return value is booleans for middle coordinates
@@ -1286,7 +1291,11 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
                 # If needed, project co above planes and vertex normal plane
                 if not is_above:
-                    co = project_co_to_planes(v.co, co, bt, df * vnspeed)
+                    co = project_co_to_planes(v.co, co, bt, EPS * vnspeed)
+
+                # Extra projection for convex verts
+                cfac = 10.0 # TODO: Parametrize?
+                co += cfac * convexity_sum * vnspeed
 
                 mid_cos.append(co)
                 vec = estimated_cos[v1] - estimated_cos[v0]
@@ -1460,7 +1469,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             par1 = ug_props.extrusion_cut_off_anc
             fac1 = mix_f(anc, par1)
 
-            # Convexity factor: Make convex vertices always favor geometric mean
+            # Convexity factor: Make convex vertices always favor
+            # geometric mean over vertex normal target
             cf = mix_f(convexity_sum, 1e-3) # TODO: Need to tune value?
 
             # Minimum geometric target mix fraction
@@ -1520,8 +1530,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             vec.normalize()
 
             # Speed-up factor from surrounding top face area change
-            speedup = max(1.0, sqrt(area_coeff))
-            # speedup = 1.0 # TEST
+            #speedup = max(1.0, sqrt(area_coeff))
+            speedup = 1.0 # TODO: Disabled area scaling for now
             unscaled_target_speed = vel * vec
             target_speed = unscaled_target_speed * speedup
 
@@ -1565,7 +1575,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             # Calculate projected geometric mean target coordinates
             pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
-                                                speeds, bmp, bt, vnspeeds, EPS)
+                                                speeds, bmp, bt, vnspeeds, \
+                                                convexity_sums[vi])
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
@@ -1576,7 +1587,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             # vplengths = lengths between vpairs
             convex_target_cos, is_aboves, vplengths = \
                 get_convex_target_cos(v, vi, intvpairs0[vi], intvpairs1[vi], \
-                                      current_cos, bmp, bt, vnspeeds[vi], EPS)
+                                      current_cos, bmp, bt, vnspeeds[vi], \
+                                      convexity_sums[vi])
 
             # Calculate layers until vpairs intersect
             vimap = {} # Map from vi index to anvis index
