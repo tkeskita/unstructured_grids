@@ -474,7 +474,6 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             l.debug("anvis_of_vi %s" % str(anvis_of_vi))
 
 
-    # TODO: Remove
     def get_face_vis_of_vi(verts, fis_of_vis, vis_of_fis):
         '''Find surrounding face vertices for all vertices.
         First return value is list which contains, for each vertex, a list
@@ -502,9 +501,9 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             fils_of_neighbour_vis.append(fis)
         return neighbour_vis_of_vi, fils_of_neighbour_vis
 
-    #if not ug_props.extrusion_uses_fixed_initial_directions:
-    #    neighbour_vis_of_vi, fils_of_neighbour_vis = \
-    #        get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
+    if not ug_props.extrusion_uses_fixed_initial_directions:
+        neighbour_vis_of_vi, fils_of_neighbour_vis = \
+            get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
 
 
     def create_UG_verts_faces_and_cells(base_verts, base_edges, base_faces, new_ugfaces):
@@ -966,7 +965,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
     def evolve_iteration(bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                          intvpairs0, intvpairs1, top_faces, fis_of_vis, \
-                         coords0, vnspeeds0, area_coeffs, layer_frac):
+                         coords0, vnspeeds0, area_coeffs, layer_frac, \
+                         neighbour_vis_of_vi):
         '''Evolve hyperbolic extrusion by one iteration'''
 
         # Help functions
@@ -1574,7 +1574,9 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
                               anvis_of_vi, current_cos)
 
             # Calculate projected geometric mean target coordinates
-            pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
+            # TODO: Restore option for using anvis or neighbour_vis?
+            # pvgm_target_co = get_pvgm_target_co(vi, top_verts, anvis_of_vi[vi], \
+            pvgm_target_co = get_pvgm_target_co(vi, top_verts, neighbour_vis_of_vi[vi], \
                                                 speeds, bmp, bt, vnspeeds, \
                                                 convexity_sums[vi])
 
@@ -1721,7 +1723,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             bm, speeds, layer_frac, df = evolve_iteration( \
                 bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                 intvpairs0, intvpairs1, top_faces, base_fis_of_vis, \
-                coords0, vnspeeds0, area_coeffs, layer_frac)
+                coords0, vnspeeds0, area_coeffs, layer_frac, \
+                neighbour_vis_of_vi)
 
             if ug_props.extrusion_create_trajectory_object:
                 bmt = update_trajectory_mesh(bmt, top_verts)
