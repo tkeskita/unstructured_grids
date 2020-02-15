@@ -1001,10 +1001,6 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             # Deduce is vertex ahead or behind of target coordinates:
             vert_is_ahead = (cos_alpha_u >= 0.0)
 
-            # Maximum velocity in relation to layer thickness
-            max_vel_ratio = 8.0 # TODO: Parametrize!
-            max_vel = max_vel_ratio * thickness
-
             # Normalized velocity difference
             ndv = (vel - tgvel) / tgvel
 
@@ -1018,14 +1014,6 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             acc = control_acceleration(ndv, ndl)
             acc = max(-max_acc, min(max_acc, acc))
 
-            # Always decelerate if this vertex is not convex
-            #EPSC = 1e-4 # Zero tolerance for convexity
-            #dec_value = -1.0 # Fixed deceleration for convex verts # TODO?
-            #if convexity_sum < EPSC:
-            #    acc = dec_value
-
-            #l.debug("ahead %s, vel %f, acc %f" % (str(vert_is_ahead), vel, acc) \
-            #        + " ndv %f, ndl %f" % (ndv, ndl))
             return acc
 
         def get_min_len_from_faces(v, top_verts, anvis_of_vi):
@@ -1060,12 +1048,10 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             df3 = courant * vel / abs(acc) # TODO: CHECKME
 
             df = min(df1, df2, df3) # Choose smallest
-            df = max(0.05, df) # But clamp at a minimum step size # TODO: Parametrize?
+            #df = max(0.05, df) # But clamp at a minimum step size # TODO: Parametrize?
             # Do not overshoot layer thickness
             if (layer_frac + df) > 1.0:
                 df = 1.0 - layer_frac + EPS
-
-            # l.debug("    lf: %f df %f acc %f vel %f" % (layer_frac, df, acc, vel))
 
             return df
 
@@ -1234,8 +1220,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
                 co = project_co_to_planes(cv.co, co, bt, EPS * vnspeeds[vi])
 
             # Extra projection for convex verts
-            cfac = 10.0 # TODO: Parametrize?
-            co += cfac * convexity_sum * vnspeeds[vi]
+            cfac = ug_props.extrusion_convex_speed_factor
+            co += cfac * convexity_sum * (co - cv.co)
 
             return co
 
@@ -1271,7 +1257,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             return pvs, pvspeeds
 
         def get_convex_target_cos(v, vi, vpairs0, vpairs1, estimated_cos, \
-                           bmp, bt, vnspeed, convexity_sum):
+                                  bmp, bt, vnspeed, convexity_sum):
             '''First return value is target coordinates (middle coordinates
             which are projected above planes) for all vpairs.
             Second return value is booleans for middle coordinates
@@ -1285,7 +1271,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             for v0, v1 in zip(vpairs0, vpairs1):
                 # Check if co is above planes
-                co = (estimated_cos[v0] + estimated_cos[v1]) / 2.0
+                co = Vector((estimated_cos[v0] + estimated_cos[v1]) / 2.0)
                 is_above = is_above_planes(v, vnspeed, co, bmp, bt)
                 is_aboves.append(is_above)
 
@@ -1294,8 +1280,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
                     co = project_co_to_planes(v.co, co, bt, EPS * vnspeed)
 
                 # Extra projection for convex verts
-                cfac = 10.0 # TODO: Parametrize?
-                co += cfac * convexity_sum * vnspeed
+                cfac = ug_props.extrusion_convex_speed_factor
+                co += cfac * convexity_sum * (co - v.co)
 
                 mid_cos.append(co)
                 vec = estimated_cos[v1] - estimated_cos[v0]
@@ -1558,11 +1544,12 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
         dfs = dict() # step sizes for each vertex
         accs = dict() # accelerations for each vertex
-        target_cos = dict() # target coordinates
+        target_cos = [] # target coordinates
 
         for vi, v in enumerate(top_verts):
             # Skip corners and boundaries
             if is_corners[vi] or is_boundaries[vi]:
+                target_cos.append(v.co)
                 continue
 
             if fulldebug:
@@ -1582,7 +1569,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             # Calculate pvs = project neighbour vertices to direction normal plane
             # Calculate pvspeeds = project neighbour speeds to direction normal plane
-            pvs, pvspeeds = project_pvs_pvspeeds(vi, top_verts, anvis_of_vi[vi], speeds)
+            pvs, pvspeeds = project_pvs_pvspeeds(vi, top_verts, anvis_of_vi[vi], vnspeeds)
 
             # Calculate convex_target_cos = target coordinates for all vpairs
             # is_aboves = booleans for original target being located above faces
@@ -1610,7 +1597,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             # Calculate target coordinates
             target_co = get_target_co(v, convexity_sums[vi], anc, v.co, \
                                       pvgm_target_co, convex_target_co)
-            target_cos[vi] = target_co
+            target_cos.append(target_co)
 
             # Calculate acceleration
             acc = get_acceleration(v, speeds[vi], target_co, min_velocity, convexity_sums[vi])
@@ -1688,18 +1675,18 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             f.normal_update()
 
         # End of evolve_iteration()
-        return bm, unscaled_new_speeds, layer_frac, df
+        return bm, unscaled_new_speeds, layer_frac, df, target_cos
 
 
-    def update_trajectory_mesh(bmt, verts):
-        '''Add top verts to trajectory mesh'''
+    def update_trajectory_mesh(bmt, cos):
+        '''Add coordinates to trajectory mesh'''
         bmt.verts.ensure_lookup_table()
         bmt.verts.index_update()
-        nverts = len(verts)
+        nverts = len(cos)
         nv0 = len(bmt.verts) - nverts
         oldverts = [bmt.verts[x] for x in range(nv0, nv0 + nverts)]
-        for i,v in enumerate(top_verts):
-            nv = bmt.verts.new(v.co)
+        for i,co in enumerate(cos):
+            nv = bmt.verts.new(co)
             v0 = oldverts[i]
             bmt.edges.new([v0, nv])
         return bmt
@@ -1720,14 +1707,16 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
         while layer_frac < 1.0 - EPS:
             if fulldebug: l.debug("===== Extrusion iteration %d =====" % niter)
 
-            bm, speeds, layer_frac, df = evolve_iteration( \
+            bm, speeds, layer_frac, df, target_cos = evolve_iteration( \
                 bm, top_verts, speeds, is_boundaries, anvis_of_vi, \
                 intvpairs0, intvpairs1, top_faces, base_fis_of_vis, \
                 coords0, vnspeeds0, area_coeffs, layer_frac, \
                 neighbour_vis_of_vi)
 
             if ug_props.extrusion_create_trajectory_object:
-                bmt = update_trajectory_mesh(bmt, top_verts)
+                top_vert_cos = [v.co for v in top_verts]
+                bmt = update_trajectory_mesh(bmt, top_vert_cos) # Current coordinates
+                #bmt = update_trajectory_mesh(bmt, target_cos) # Target coordinates
 
             if print_iterations:
                 max_vel = max([x.length for x in speeds])
