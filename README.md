@@ -38,7 +38,7 @@ https://unstructured-grids.readthedocs.io.
 Please use
 [Github issues](https://github.com/tkeskita/unstructured_grids/issues)
 for bug reporting. There is also
-[a discussion thread on CFD Online](https://github.com/tkeskita/unstructured_grids/issues)
+[a discussion thread on CFD Online](https://www.cfd-online.com/Forums/openfoam-community-contributions/219493-unstructured-grids-add-blender.html)
 and another one on [VTK discourse forum](https://discourse.vtk.org/t/unstructured-grids-for-blender/1959).
 
 
