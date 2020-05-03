@@ -33,6 +33,15 @@ is located in docs directory of the sources and is viewable online at
 https://unstructured-grids.readthedocs.io.
 
 
+## Issues
+
+Please use
+[Github issues](https://github.com/tkeskita/unstructured_grids/issues)
+for bug reporting. There is also
+[a discussion thread on CFD Online](https://github.com/tkeskita/unstructured_grids/issues)
+and another one on [VTK discourse forum](https://discourse.vtk.org/t/unstructured-grids-for-blender/1959).
+
+
 ## Development Ideas for Future
 
 - Don't save Unstructured Grid object in blend file to save disk space
