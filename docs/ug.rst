@@ -9,15 +9,25 @@ Introduction
 `Unstructured Grids (UG) <https://github.com/tkeskita/unstructured_grids>`_
 is an add-on for `Blender 2.80 (or a later version) <https://www.blender.org>`_
 for creating, importing, editing and exporting of
-3D volume meshes composed of arbitrary polyhedron cells (a.k.a 
+3D finite volume meshes composed of arbitrary polyhedron cells (a.k.a 
 `3D unstructured grids <https://en.wikipedia.org/wiki/Unstructured_grid>`_.
-Add-on handles mesh topology and geometry (the definition of cells).
+The motivation for this work was the lack of open source volume 
+mesh editors. There are numerous finite volume mesh generators,
+but practically no general or visual editors.
+
+Add-on only handles mesh topology and geometry (the definition of cells).
 Field data (cell data or point data) for the mesh is disregarded.
 Editing includes tasks like moving of selected vertices, deletion of
 existing cells, extrusion of new cells, and assignation of selected
 faces and cells to named boundaries and zones. The user of the add-on
 is assumed to know Blender modelling and material systems on a basic
 level.
+
+.. warning::
+
+   This add-on is experimental (under feature development). There are
+   no guarantees. Use at your own risk. Always check the resulting
+   exported mesh before use in simulations.
 
 
 Main Features and Limitations
@@ -43,7 +53,7 @@ Main Features and Limitations
   operators ('UG' in operator name) which keep UG Data and Blender
   mesh object contents in sync.
 
-- Operations can be slow for large meshes.
+- **Many operations are slow for large meshes.**
 
 
 Installation
@@ -64,82 +74,238 @@ Installation
    started from a terminal) may be useful in case of problems.
    For more information take a look at file *\_\_init\_\_.py*.
 
+UG Toolbar
+----------
 
-Use Case Examples
+Add-on is visible in Blender’s 3D Viewport in Sidebar as a separate
+tab. To view the add-on panels, you must
+
+- Select a mesh object (in 3D Viewport or in Outliner)
+
+- View Sidebar (“View” –> “Toggle Sidebar” or press “N” key in 3D Viewport)
+
+- Select “UG” tab in the Sidebar
+
+.. image:: images/ug_toolbar.png
+
+Note that if no unstructred grid has been imported or created by
+extrusion from a face selection, then most of the tools are inactive.
+
+
+Unstructured Grid Object
+------------------------
+
+Import and *Extrude Cells* operators (see below) create a Blender Mesh
+Object called **Unstructured Grid**, to contain the unstructured
+grid. Add-on ignores all other Blender objects.
+
+
+Import and Export
 -----------------
 
-Change boundary patch assignments for existing/new patches (select
-faces in Blender, then assign selection to existing/new material).
+You can import and export unstructured grid via menu commands File ->
+Import/Export. Add-on supports currently two types of volume mesh
+formats:
+
+- **OpenFOAM PolyMesh**: OpenFOAM's PolyMesh ASCII format
+  (see `PolyMesh description`_). 
+  Select the polyMesh directory -> OK. 
+
+- **VTK Unstructured Grid (.vtu)**: `Unstructured Grid (.vtu) XML ASCII file format`_. 
+  Note: Export currently creates VTK polyhedrons.
+
+
+Extrusion of New Cells
+----------------------
+
+**Extrude Cells** operator creates new cells from face selection based
+on Extrusion Settings shown on the Toolbar.
+
+- *Layers* specifies the number of layers for extrusion
+
+- *Use Fixed Extrusion Method* button with icon determines the method
+  used in extrusion:
+
+  - **Fixed extrusion method** is used when the button is on
+    (default). Extrusion direction is fixed to initial vertex normal
+    direction.
+
+  - **Hyperbolic extrusion method** is applied when the button is off.
+    This is an experimental extrusion method which is under
+    development and is not currently supported.
+
+- *Thickness* specifies the height for the extruded cell layer.
+
+- *Expression for Scaling Thickness* allows user to specify a Python
+  expression which updates *Thickness* after extrusion of each
+  layer. *x* in the expression is thickness. The default value
+  *x\*1.0* will keep thickness constant.
+
+To extrude cells, first select one or more faces in the Unstructured
+Grid object (or any mesh object for first extrusion), then run
+**Extrude Cells** operator by clicking on the named button in the
+toolbar.
+
+
+Storage and View Operators
+--------------------------
+
+- The top part of the Unstructured Grid Toolbar shows current
+  number of cells, or a warning if there are no cells defined.
+
+- *Update to Storage* takes all changes made to the Unstructured Grid
+  Object, and stores them in text storage variables. This allows
+  saving of a snapshot of current status in work memory. This operator
+  is run automatically when .blend file is saved.
+
+- *Restore from Storage* discards Unstructed Grid Object and rebuilds
+  it based on the information in the storage variables. This operator
+  is run automatically when .blend file is opened.
+
+.. note::
+
+   You can use *Update to Storage* and *Restore from Storage* commands
+   as a rudimentary one-step undo operation. Using Blender's Undo
+   command (CTRL-Z) is unfortunately not currently supported.
+
+- *Reset View* refreshes the view. It shows boundary faces and hides
+  deleted faces and vertices.
+
+
+Cell operations
+---------------
+
+Cell selection is based on vertex selection. You can first select any
+vertices of the Unstructured Grid Object in Vertex Selection Mode in
+Edit Mode. Then select operator:
+
+- *Exclusive* will reduce current vertex selection to whole cells.  If
+  vertex selection does not include all vertices of any one cell, then
+  vertices are deselected.
+
+- *Inclusive* will extend current vertex selection to cover whole
+  cells. If selected vertex is part of any cells, then all other
+  vertices of those cells is added to vertex selection.
+
+*Delete Cells* will remove whole cells included in vertex selection.
+Deletion of cells creates new boundary faces, which are added to
+*default* material (boundary patch, see below). Note: Cell deletions
+are not displayed correctly in Object Mode.
+
+
+Edit topology
+-------------
+
+*Dissolve Edges* merges selected vertices which are connected by edges
+in pairwise manner. TODO: Experimental, needs to be improved.
+
+Zones
+-----
+
+Zones are essentially an additional list of faces (internal or
+external) or cells in OpenFOAM. Zones are used to control subset of
+faces/cells in simulations. Note: VTK unstructured grids do not
+currently support zones.
+
+Zones are specified by assigning vertices to 
+`Blender Vertex Groups <https://docs.blender.org/manual/en/latest/modeling/meshes/properties/vertex_groups/index.html>`_.
+Vertex group naming defines zone type. Cell zone *x* must be named as
+**cellZone_x**, and face zone *y* must be named as **faceZone_y**.
+
+*Update from Vertex Groups* operator must be run after assigning
+vertices to vertex groups to update changes to unstructured grids.
+
+If any face zones exist, then following additional options become
+visible:
+
+- *Edit Face Zone Orientation* is a number, which specifies which face
+  zone will be affected by the following operations:
+
+- *Start Editing* will create a temporary **Face Zone Orientation**
+  Object (which contains only the faces of the face zone), switch on
+  Edit Mode and Face Orientation Overlay, which colors faces to blue
+  (face normal towards view) or red (face normal away from view). In
+  this mode, the user can select faces and flip their normals if
+  needed (by using the *Flip Face Orientations* operator), to
+  harmonize all face normals. Harmonizing is needed to get
+  e.g. correct face flux sums in OpenFOAM simulation for face zones.
+
+- *Finish Editing* will exit the normal editing mode, transfer
+  information of faces whose normals need to be flipped (flipMap) back
+  to Unstructured Grid Object, and finally delete the temporary Face
+  Zone Orientation Object.
+
+Info About Selected Items
+-------------------------
+
+These operators show information for debug purposes.
+
+
+Modification of Boundary Patches
+--------------------------------
+
+Each boundary face of the volume mesh is assigned to a named list,
+called boundary patch in OpenFOAM terminology. This allows
+specification of boundary conditions for simulations. All boundary
+faces must belong to one (and only one) boundary patch. The add-on
+uses
+`Blender`s Material System <https://docs.blender.org/manual/en/latest/render/materials/index.html>`_
+to visualize and specify boundary patches. The material name is used
+as patch name.
 
 .. image:: images/ug_boundary_patch_assign.png
 
-Moving of vertices. This can be applied for tasks like
-elongation/stretching of cells (by using Proportional Editing in
-Blender), oe curving simulation domain, to model e.g. pipes (by
-applying Curve Modifier in Blender)
+To assign faces to materials (patches), you must select faces (using
+Face Selection Mode in Edit Mode), select or create new material, and
+the click on Assign button.
+
+
+Transformation of mesh vertices
+-------------------------------
+
+Blender has a powerful system for selecting vertices and operating on
+selections (e.g. moving, rotating or scaling) in 3D Viewport. Blender
+also supports inputting exact measurements for operations. This makes
+it possible to edit volume meshes (without topology changes) in
+Blender simply by moving vertices.
+
+.. Note::
+
+   Direct deletion of vertices or faces from Blender Mesh Object is not
+   supported. Only *Delete Cells* operator can be used to keep Blender
+   Object in sync with the Python cell data model.
+
+The add-on can be applied for tasks like elongation/stretching of
+cells (by using Proportional Editing in Blender), or curving
+simulation domain, to model e.g. pipes (by applying Curve Modifier in
+Blender)
 
 .. image:: images/ug_stretch_and_bend.png
 
-Scaling/moving/rotation of a selected part of the mesh.
-Extrude a mesh profile (on left), and twist the result (on right):
+Another example shows extrusion of a mesh profile (on left), followed by
+twisting of the result (on right):
 
 .. image:: images/ug_extrude_and_twist.png
 
 
-Status
-------
+Example
+-------
 
-This add-on is in feature development stage.
-Currently implemented features include:
-
-- Import and Export of ASCII PolyMesh files (boundary, faces,
-  neighbour, owner, points). PolyMesh Import and Export operators are
-  located in File menu under Import and Export.
-
-- Unstructured grid data is saved as text strings (UG Storage) inside Blend files.
-
-- Undo (CTRL + Z) is not working correctly, but one-step undo is
-  supported indirectly: Use *Update to Storage* to sync changes made
-  in Blender for safekeeping in UG Storage. To undo, use *Restore from
-  Storage*.
-
-- Boundary face patches can be changed by assigning material for faces
-
-- Selection of cells from selected vertices via operators (UG Select
-  Cells Inclusive/Exclusive)
-
-- Cell and face zones can be created, visualized and edited by
-  modifying Vertex Groups in Blender.
-
-- UG GUI Panel is shown as a Tab in Sidebar in 3D Viewport, for easy
-  access to UG operators and information.
-
-- Deletion of selected cells to carve voids into the domain.
-
-- Fixed Extrusion (towards vertex normal direction) of new cells
-  (one or several layers) from selected faces (Warning: slow operation).
-
-- Dissolve Edges (merge selected vertices connected by edges)
-  (Note: Experimental feature).
-
-- Import/Export of VTK Unstructured Grids (XML uncompressed ASCII
-  (.vtu) file format). Export creates VTK polyhedrons.
-
-- Cell integrity check and statistics routine (Check Selected Cells)
-
-- Hyperbolic Extrusion (Warning: experimental and very slow operation)
-  can be enabled in Extrusion Settings (disable Use Fixed Extrusion).
-  Under development.
+A modified example of the OpenFOAM cavity tutorial mesh is located
+in the *examples* folder in the add-on sources (file name *cavity.blend*).
 
 
 OpenFOAM Export Workflow
 ------------------------
 
-- Export cells from Blender (File -> Export -> OpenFOAM PolyMesh (UG))
+- Export volume mesh from Blender (File -> Export -> OpenFOAM PolyMesh (UG))
   into an *empty* polyMesh folder (under your OpenFOAM case folder
   *constant/polyMesh*).
 
-- Run OpenFOAM command `renumberMesh -overwrite` to optimize bandwidth.
+- Run OpenFOAM command `renumberMesh -overwrite` to optimize
+  bandwidth. This is needed, because order of faces and cells exported
+  from Blender are not optimized in any way, so the resulting mesh may
+  be inefficient for numerical solution.
 
 - Run OpenFOAM command `checkMesh` to make sure mesh is intact and ready for use.
 
