@@ -107,7 +107,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 
         # Extrude layers
         for i in range(ug_props.extrusion_layers):
-            t0 = time.clock()
+            t0 = time.time()
             is_last_layer = (i == (ug_props.extrusion_layers - 1))
             if i == 0:
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
@@ -119,7 +119,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                     extrude_cells(niter, bm, bmt, [], speeds, \
                                   new_ugfaces, initial_face_areas, \
                                   is_last_layer)
-            t1 = time.clock()
+            t1 = time.time()
             l.debug("Extruded layer %d, " % (i + 1) \
                     + "cells: %d " % n \
                     + "iters: %d " % niter \
@@ -188,7 +188,7 @@ def initialize_extrusion():
 
     # Mode switch is needed to make sure mesh is saved to original object
     bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.mode_set(mode='EDIT')
+    #bpy.ops.object.mode_set(mode='EDIT')
 
     import bmesh
     # Couldn't use bmesh.from_edit_mesh() here because original mesh
@@ -228,10 +228,15 @@ def initialize_extrusion():
         return False, "No faces selected", initial_faces
 
     # Check mesh for hanging verts
-    vertcolist = check_hanging_face_verts(bm)
-    if vertcolist:
-        return False, "Found %d hanging vert(s) at " % len(vertcolist) \
-            + str(vertcolist), initial_faces
+    vertlist = check_hanging_face_verts(bm)
+    if vertlist:
+        for f in bm.faces:
+            f.select_set(False)
+        for v in vertlist:
+            v.select_set(True)
+        bm.to_mesh(source_ob.data)
+        bm.free()
+        return False, "Found %d hanging vert(s)" % len(vertlist), initial_faces
 
     ob = ug.initialize_ug_object()
 
@@ -266,14 +271,14 @@ def check_hanging_face_verts(bm):
     Returns list of hanging vert coordinate vectors.
     '''
 
-    vertcolist = []
+    vertlist = []
     faces = [f for f in bm.faces if f.select]
     for f in faces:
         for v in f.verts:
             if len(v.link_edges) == 2 and len(v.link_faces) == 2:
-                if v.co not in vertcolist:
-                    vertcolist.append(v.co)
-    return vertcolist
+                if v not in vertlist:
+                    vertlist.append(v)
+    return vertlist
 
 
 def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
