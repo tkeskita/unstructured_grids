@@ -138,11 +138,24 @@ class UGProperties(bpy.types.PropertyGroup):
         default="x*1.0",
         maxlen=0,
     )
-    extrusion_uses_fixed_initial_directions: bpy.props.BoolProperty(
-        name="Use Fixed Extrusion Method",
-        description="Use Fixed Directions and Length for All Layers in Extrusion" \
-        + ". Disable to Switch to Hyperbolic Extrusion",
-        default=True,
+    extrusion_method: bpy.props.EnumProperty(
+        name="Extrusion Method",
+        description="Extrusion Method",
+        items={
+            (
+                "fixed",
+                "Fixed Extrusion",
+                "Use fixed normal direction and length for extrusion",
+                0,
+            ),
+            (
+                "hyperbolic",
+                "Hyperbolic Extrusion",
+                "Use experimental hyperbolic extrusion method",
+                1,
+            ),
+        },
+        default="fixed",
     )
     extrusion_layers: bpy.props.IntProperty(
         name="Extrusion Layers",
@@ -317,21 +330,18 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.label(text="Extrusion Settings:")
-        col = layout.column()
-        rowsub = col.row(align=True)
-        rowsub.prop(ug_props, "extrusion_layers", text="Layers")
-        rowsub.prop(ug_props, "extrusion_uses_fixed_initial_directions",
-                    icon='NORMALS_VERTEX_FACE', text="")
-
+        row = layout.row()
+        row.prop(ug_props, "extrusion_layers", text="Layers")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_method")
         row = layout.row()
         row.prop(ug_props, "extrusion_thickness", text="Thickness")
-
         row = layout.row()
         row.label(text="Expression for Scaling Thickness:")
         row = layout.row()
         row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
 
-        if not ug_props.extrusion_uses_fixed_initial_directions:
+        if ug_props.extrusion_method == "hyperbolic":
             row = layout.row()
             row.prop(ug_props, "extrusion_courant_number")
             row = layout.row()

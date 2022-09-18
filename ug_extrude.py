@@ -35,39 +35,39 @@ LARGE = 100.0 # Cut-off for large values for weight function
 EPS_FLOAT = 1.2e-7 # Single precision float machine epsilon
 EPS = 2.0 * EPS_FLOAT # Precision with a safety margin
 
-# Summary of extrusion method: Extrusion starts from selected mesh
-# faces (base faces). Each face produces one new cell (in matching
-# order and numbering). Extrusion is started by casting one new vertex
-# (top vertex) from each vertex of base faces (base vertex) towards a
-# normal direction calculated from surrounding boundary faces. Each edge
-# of base faces produces one side face by connecting old and new vertices.
-# Finally top faces are added by creating faces connecting new vertices,
-# to close each new cell.
+# Overall description of all extrusion methods
 #
-# There are two extrustion modes:
-# 1. Fixed Extrusion Method - uses vertex normal direction and
-#    extrusion velocities constant. Simple, mostly uncontrollable and
-#    relatively fast method.
-# 2. Hyperbolic Extrusion Method - adjusts extrusion direction and
-#    velocities of individual vertices according to surrounding topology.
-#    Adaptive but slow and experimental method, with lots of controls.
+# Extrusion starts from selected mesh faces (base faces). Each face
+# produces one new cell (in matching order and numbering). Extrusion
+# is started by casting one new vertex (top vertex) from each vertex
+# of base faces (base vertex) towards a normal direction calculated
+# from surrounding boundary faces. Each edge of base faces produces
+# one side face by connecting old and new vertices.  Finally top faces
+# are added by creating faces connecting new vertices, to close each
+# new cell.
+
+# Extrusion methods
 #
+# Fixed Extrusion Method - uses constant vertex normal direction and
+#    constant extrusion length.
+# Hyperbolic Extrusion Method - an experimental and iterative method
+#    which adjusts extrusion direction and extrusion length of individual
+#    vertices according to surroundings.
+#    Unit of extrusion "velocity" is meters per cell layer.
+#    Iteration step size unit is fraction of cell layer.
+#    One way to think about it: If one cell layer is extruded in one
+#    second, then velocity unit would be meter per second.
+
 # Ideas to optimize extrusion speed further:
 # - don't create internal faces into mesh
 # - don't create top faces into mesh until last layer
-
 # TODO: Autosplit twisted faces after some threshold?
 
-# Notes for Hyperbolic Extrusion:
-# Unit of velocity is meters per cell layer. Iteration step size
-# unit is fraction of cell layer. One way to think about it: If one
-# cell layer was extruded in one second, then velocity unit would be
-# in meters per second.
-
-# Nomenclature: (TODO: Add more terms)
+# Terminology
 #
 # iteration = internal iteration step in hyperbolic extrusion of a cell layer
-# velocity = measure of speed (scalar value, in unit of m/layer)
+# velocity = vertex extrusion speed, which is directly proportional to
+#            extrusion thickness (scalar value, in unit of m/layer)
 # speed = velocity * direction normal vector (vector)
 
 class UG_OT_ExtrudeCells(bpy.types.Operator):
@@ -145,7 +145,7 @@ def recreate_trajectory_object(bm):
 
     # Do nothing in fixed extrusion mode
     ug_props = bpy.context.scene.ug_props
-    if ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "fixed":
         return None
 
     obname = "Extrusion Trajectory"
@@ -284,7 +284,7 @@ def check_hanging_face_verts(bm):
 def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
                   initial_face_areas, is_last_layer):
     '''Extrude new cells from current face selection. Initial faces
-    argument provides optional list of initial UGFaces whose direction
+    argument provides optional list of initial UGFaces whose normal direction
     is reversed at the end.
     '''
 
@@ -322,7 +322,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
         it's vertex indices).
         Third return value is list of vertex face lists (to map
         from vertex to it's face indices).
-        Fourth return value is maps face vertices to their index number.
+        Fourth return value maps face vertices to vertex index number.
         '''
 
         verts = [] # vertex list
@@ -468,7 +468,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
         return is_corners, is_boundaries, bn_vis, an_vis
 
     # Generate vertex classification information
-    if not ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "hyperbolic":
         is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
             classify_verts(base_verts, base_edges, base_faces, \
                            base_fis_of_vis, ibasevertmap)
@@ -506,7 +506,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             fils_of_neighbour_vis.append(fis)
         return neighbour_vis_of_vi, fils_of_neighbour_vis
 
-    if not ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "hyperbolic":
         neighbour_vis_of_vi, fils_of_neighbour_vis = \
             get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
 
@@ -780,7 +780,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
         # Cast new vertices very small distance ahead
         for i in range(len(base_verts)):
-            if ug_props.extrusion_uses_fixed_initial_directions:
+            if ug_props.extrusion_method == "fixed":
                 newco = base_verts[i].co + speeds[i]
             else:
                 newco = base_verts[i].co + df * speeds[i]
@@ -959,7 +959,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             intvpairs1.append(ivp1)
         return intvis, intvpairs0, intvpairs1
 
-    if not ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "hyperbolic":
         intvis, intvpairs0, intvpairs1 = \
             calculate_intvpairs(anvis_of_vi, base_fis_of_vis, is_boundaries)
 
@@ -1040,7 +1040,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             velocity in units m/layer.
             '''
 
-            from .ug_checks import get_edge_stats_from_bmesh_faces
+            # from .ug_checks import get_edge_stats_from_bmesh_faces
 
             # Option 1. Maximum normalized step size
             df1 = 0.2 # TODO: Parametrize?
@@ -1057,6 +1057,9 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
             # Do not overshoot layer thickness
             if (layer_frac + df) > 1.0:
                 df = 1.0 - layer_frac + EPS
+
+            if df < 0.0:
+                raise Exception("df %f < 0.0" % df)
 
             return df
 
@@ -1631,7 +1634,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
         # Use smallest step size
         if len(dfs) == 0:
-            df = 1.0
+            df = 0.01  # 1.0
         else:
             df = min(dfs.values())
         if fulldebug:
@@ -1698,7 +1701,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
     # Call the extrusion iteration in loop
     ug_props = bpy.context.scene.ug_props
-    if not ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "hyperbolic":
 
         # Save vertex normal speeds for cone limitation
         vnspeeds0 = get_vertex_normal_speeds(top_verts, top_faces, \
@@ -1725,7 +1728,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
             if print_iterations:
                 max_vel = max([x.length for x in speeds])
-                l.debug("iter %d: df %f, max_vel %f" % (niter, df, max_vel))
+                l.debug("iter %d: frac %f, df %f, max_vel %f" % (niter, layer_frac, df, max_vel))
 
             niter += 1
 
@@ -1740,7 +1743,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
         return bmt
 
     # Add faces to trajectory object at last layer
-    if not ug_props.extrusion_uses_fixed_initial_directions:
+    if ug_props.extrusion_method == "hyperbolic":
         if is_last_layer and ug_props.extrusion_create_trajectory_object:
             nv0 = len(bmt.verts) - len(top_verts)
             bmt = add_faces_to_trajectory_mesh(bmt, nv0, base_vis_of_fis)
