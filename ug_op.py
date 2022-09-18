@@ -279,6 +279,23 @@ def reset_view():
     l.debug("Hidden faces: %d, hidden verts: %d" % (nf, nv))
 
 
+class UG_OT_ResetUGObject(bpy.types.Operator):
+    '''Reset Unstructured Grid Object'''
+
+    bl_idname = "unstructured_grids.reset_ug_object"
+    bl_label = "Reset UG Object (UG)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT','EDIT_MESH'}
+
+    def execute(self, context):
+        from . import ug
+        ug.initialize_ug_object()
+        self.report({'INFO'}, "UG Object has been reset")
+        return {'FINISHED'}
+
+
 ###########################
 ##### CELL OPERATIONS #####
 ###########################

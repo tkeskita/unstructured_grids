@@ -294,6 +294,8 @@ class VIEW3D_PT_UG_GUI:
         row.operator("unstructured_grids.polymesh_to_ug", text="Restore from Storage")
         row = layout.row()
         row.operator("unstructured_grids.reset_view", text="Reset View")
+        row = layout.row()
+        row.operator("unstructured_grids.reset_ug_object", text="Reset UG Object")
 
         row = layout.row()
         row.label(text="Select Cells:")
@@ -421,6 +423,7 @@ classes = (
     ug_op.UG_OT_SelectCellsInclusive,
     ug_op.UG_OT_SelectCellsExclusive,
     ug_op.UG_OT_ResetView,
+    ug_op.UG_OT_ResetUGObject,
     ug_op.UG_OT_DeleteCells,
     ug_extrude.UG_OT_ExtrudeCells,
     ug_zones.UG_OT_EditFaceZoneOrientations,
