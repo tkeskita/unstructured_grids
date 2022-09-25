@@ -82,7 +82,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
     def execute(self, context):
         mode = context.active_object.mode
         # Initialize from selected faces if needed
-        is_ok, text, initial_faces = initialize_extrusion()
+        is_ok, text, initial_ugfaces = initialize_extrusion()
         if not is_ok:
             self.report({'ERROR'}, "Initialization failed: " + text)
             return {'FINISHED'}
@@ -111,7 +111,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
             is_last_layer = (i == (ug_props.extrusion_layers - 1))
             if i == 0:
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
-                    extrude_cells(niter, bm, bmt, initial_faces, speeds, \
+                    extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, \
                                   new_ugfaces, initial_face_areas, \
                                   is_last_layer)
             else:
@@ -176,15 +176,15 @@ def initialize_extrusion():
     list of initial faces (if initializing from faces when no cells exist).
     '''
 
-    initial_faces = [] # List of new UGFaces
+    initial_ugfaces = [] # List of new UGFaces
 
     # Do nothing if there is already an UG state
     if ug.exists_ug_state():
-        return True, "UG state exists, OK to continue", initial_faces
+        return True, "UG state exists, OK to continue", initial_ugfaces
 
     source_ob = bpy.context.active_object
     if source_ob.name == ug.obname:
-        return False, "Source object name can't be " + ug.obname, initial_faces
+        return False, "Source object name can't be " + ug.obname, initial_ugfaces
 
     # Mode switch is needed to make sure mesh is saved to original object
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -225,7 +225,7 @@ def initialize_extrusion():
 
     # Bail out if there are no faces
     if len(bm.faces) == 0:
-        return False, "No faces selected", initial_faces
+        return False, "No faces selected", initial_ugfaces
 
     # Check mesh for hanging verts
     vertlist = check_hanging_face_verts(bm)
@@ -236,7 +236,7 @@ def initialize_extrusion():
             v.select_set(True)
         bm.to_mesh(source_ob.data)
         bm.free()
-        return False, "Found %d hanging vert(s)" % len(vertlist), initial_faces
+        return False, "Found %d hanging vert(s)" % len(vertlist), initial_ugfaces
 
     ob = ug.initialize_ug_object()
 
@@ -252,7 +252,7 @@ def initialize_extrusion():
         ugf.add_mesh_face(i)
         for vi in verts_ind:
             ug.ugverts[vi].add_face(ugf)
-        initial_faces.append(ugf)
+        initial_ugfaces.append(ugf)
     l.debug("Initial Face count: %d" % len(ug.ugfaces))
 
     bm.to_mesh(ob.data)
@@ -263,7 +263,7 @@ def initialize_extrusion():
     ug.hide_other_objects()
     bpy.ops.object.mode_set(mode = 'EDIT')
 
-    return True, "initialization done", initial_faces
+    return True, "initialization done", initial_ugfaces
 
 
 def check_hanging_face_verts(bm):
@@ -281,7 +281,7 @@ def check_hanging_face_verts(bm):
     return vertlist
 
 
-def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
+def extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, new_ugfaces, \
                   initial_face_areas, is_last_layer):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose normal direction
@@ -301,8 +301,8 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
     ugci0 = len(ug.ugcells) # Number of UGCells before extruding
     ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
-    if len(initial_faces) > 0:
-        new_ugfaces = list(initial_faces) # List of created UGFaces
+    if len(initial_ugfaces) > 0:
+        new_ugfaces = list(initial_ugfaces) # List of created UGFaces
 
     def add_entry(lol, i, val):
         '''Add entry val to list with index i into list of lists lol'''
@@ -1782,7 +1782,7 @@ def extrude_cells(niter, bm, bmt, initial_faces, speeds, new_ugfaces, \
 
     # Reverse direction of initial faces (initial extrusion only)
     bm.faces.ensure_lookup_table()
-    for ugf in initial_faces:
+    for ugf in initial_ugfaces:
         if fulldebug: l.debug("Final flipping face %d" % ugf.bi)
         bm.faces[ugf.bi].normal_flip()
         bm.faces[ugf.bi].normal_update()
