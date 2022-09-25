@@ -1679,19 +1679,6 @@ def extrude_cells(niter, bm, bmt, speeds, new_ugfaces, \
         return bm, unscaled_new_speeds, layer_frac, df, target_cos
 
 
-    def update_trajectory_mesh(bmt, cos):
-        '''Add coordinates to trajectory mesh'''
-        bmt.verts.ensure_lookup_table()
-        bmt.verts.index_update()
-        nverts = len(cos)
-        nv0 = len(bmt.verts) - nverts
-        oldverts = [bmt.verts[x] for x in range(nv0, nv0 + nverts)]
-        for i,co in enumerate(cos):
-            nv = bmt.verts.new(co)
-            v0 = oldverts[i]
-            bmt.edges.new([v0, nv])
-        return bmt
-
     # Call the extrusion iteration in loop
     ug_props = bpy.context.scene.ug_props
     if ug_props.extrusion_method == "hyperbolic":
@@ -1725,51 +1712,13 @@ def extrude_cells(niter, bm, bmt, speeds, new_ugfaces, \
 
             niter += 1
 
-
-    def add_faces_to_trajectory_mesh(bmt, nv0, vis_of_fis):
-        '''Add final faces to mesh'''
-        bmt.verts.ensure_lookup_table()
-        bmt.verts.index_update()
-        for vis in vis_of_fis:
-            verts = [bmt.verts[nv0 + vi] for vi in vis]
-            bmt.faces.new(verts)
-        return bmt
-
     # Add faces to trajectory object at last layer
     if ug_props.extrusion_method == "hyperbolic":
         if is_last_layer and ug_props.extrusion_create_trajectory_object:
             nv0 = len(bmt.verts) - len(top_verts)
             bmt = add_faces_to_trajectory_mesh(bmt, nv0, base_vis_of_fis)
 
-
-    def add_base_face_to_cells(faces, ugci0):
-        '''Add base faces to cells as neighbours'''
-
-        for i in range(len(faces)):
-            # Add existing UGFace to UGCell
-            ugf = ug.facemap[faces[i].index]
-            ugci = ugci0 + i
-            c = ug.ugcells[ugci]
-            c.add_face_and_verts(ugf)
-            ugf.neighbour = c
-
     add_base_face_to_cells(base_faces, ugci0)
-
-
-    def thickness_update():
-        '''Update layer thickness using expression specified by user'''
-
-        ug_props = bpy.context.scene.ug_props
-        x = ug_props.extrusion_thickness
-        expr = ug_props.extrusion_scale_thickness_expression
-        try:
-            rval = eval(expr)
-            if fulldebug: l.debug("Expression returned %s" % str(rval))
-            ug_props.extrusion_thickness = float(rval)
-        except:
-            l.error("Error in evaluating: %r" % expr)
-        # TODO: Add error notification to user if expression fails
-
     thickness_update()
 
     # End of extrude_cells()
@@ -1777,6 +1726,59 @@ def extrude_cells(niter, bm, bmt, speeds, new_ugfaces, \
 
 
 ##### Refactoring section below #####
+
+
+def update_trajectory_mesh(bmt, cos):
+    '''Add coordinates to trajectory mesh'''
+
+    bmt.verts.ensure_lookup_table()
+    bmt.verts.index_update()
+    nverts = len(cos)
+    nv0 = len(bmt.verts) - nverts
+    oldverts = [bmt.verts[x] for x in range(nv0, nv0 + nverts)]
+    for i,co in enumerate(cos):
+        nv = bmt.verts.new(co)
+        v0 = oldverts[i]
+        bmt.edges.new([v0, nv])
+    return bmt
+
+
+def add_faces_to_trajectory_mesh(bmt, nv0, vis_of_fis):
+    '''Add final faces to trajectory mesh'''
+
+    bmt.verts.ensure_lookup_table()
+    bmt.verts.index_update()
+    for vis in vis_of_fis:
+        verts = [bmt.verts[nv0 + vi] for vi in vis]
+        bmt.faces.new(verts)
+    return bmt
+
+
+def add_base_face_to_cells(faces, ugci0):
+    '''Add base faces to cells as neighbours'''
+
+    for i in range(len(faces)):
+        # Add existing UGFace to UGCell
+        ugf = ug.facemap[faces[i].index]
+        ugci = ugci0 + i
+        c = ug.ugcells[ugci]
+        c.add_face_and_verts(ugf)
+        ugf.neighbour = c
+
+
+def thickness_update():
+    '''Update layer thickness using expression specified by user'''
+
+    ug_props = bpy.context.scene.ug_props
+    x = ug_props.extrusion_thickness
+    expr = ug_props.extrusion_scale_thickness_expression
+    try:
+        rval = eval(expr)
+        if fulldebug: l.debug("Expression returned %s" % str(rval))
+        ug_props.extrusion_thickness = float(rval)
+    except:
+        l.error("Error in evaluating: %r" % expr)
+    # TODO: Add error notification to user if expression fails
 
 
 def flip_initial_faces(bm, initial_ugfaces):
