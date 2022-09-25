@@ -92,7 +92,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         n = 0 # new cell count
         niter = 0 # iteration counter
         speeds = [] # Extrusion speed vectors, can be updated per layer
-        new_ugfaces = [] # List of new ugfaces created in extrusion
+        new_ugfaces = list(initial_ugfaces) # List of new ugfaces created in extrusion
 
         import bmesh
         import time
@@ -109,16 +109,10 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         for i in range(ug_props.extrusion_layers):
             t0 = time.time()
             is_last_layer = (i == (ug_props.extrusion_layers - 1))
-            if i == 0:
-                niter, bm, bmt, nf, speeds, new_ugfaces = \
-                    extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, \
-                                  new_ugfaces, initial_face_areas, \
-                                  is_last_layer)
-            else:
-                niter, bm, bmt, nf, speeds, new_ugfaces = \
-                    extrude_cells(niter, bm, bmt, [], speeds, \
-                                  new_ugfaces, initial_face_areas, \
-                                  is_last_layer)
+            niter, bm, bmt, nf, speeds, new_ugfaces = \
+                extrude_cells(niter, bm, bmt, speeds, \
+                              new_ugfaces, initial_face_areas, \
+                              is_last_layer)
             t1 = time.time()
             l.debug("Extruded layer %d, " % (i + 1) \
                     + "cells: %d " % n \
@@ -126,6 +120,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                     + "(%d cells/s)" % int(nf/(t1-t0)))
             n += nf
 
+        flip_initial_faces(bm, initial_ugfaces)
         bm.normal_update()
         bmesh.update_edit_mesh(mesh=ob.data)
         bm.free()
@@ -281,7 +276,7 @@ def check_hanging_face_verts(bm):
     return vertlist
 
 
-def extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, new_ugfaces, \
+def extrude_cells(niter, bm, bmt, speeds, new_ugfaces, \
                   initial_face_areas, is_last_layer):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose normal direction
@@ -301,8 +296,6 @@ def extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, new_ugfaces, \
 
     ugci0 = len(ug.ugcells) # Number of UGCells before extruding
     ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
-    if len(initial_ugfaces) > 0:
-        new_ugfaces = list(initial_ugfaces) # List of created UGFaces
 
     def add_entry(lol, i, val):
         '''Add entry val to list with index i into list of lists lol'''
@@ -1779,14 +1772,19 @@ def extrude_cells(niter, bm, bmt, initial_ugfaces, speeds, new_ugfaces, \
 
     thickness_update()
 
+    # End of extrude_cells()
+    return niter, bm, bmt, len(base_faces), speeds, new_ugfaces
 
-    # Reverse direction of initial faces (initial extrusion only)
+
+##### Refactoring section below #####
+
+
+def flip_initial_faces(bm, initial_ugfaces):
+    '''Flip the normal direction of initial faces in bmesh'''
+
     bm.faces.ensure_lookup_table()
     for ugf in initial_ugfaces:
         if fulldebug: l.debug("Final flipping face %d" % ugf.bi)
         bm.faces[ugf.bi].normal_flip()
         bm.faces[ugf.bi].normal_update()
         ugf.invert_face_dir()
-
-    # End of extrude_cells()
-    return niter, bm, bmt, len(base_faces), speeds, new_ugfaces
