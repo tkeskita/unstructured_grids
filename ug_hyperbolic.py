@@ -29,9 +29,10 @@ l = logging.getLogger(__name__)
 
 LARGE = 100.0  # Cut-off for large values for weight function
 ug_props = bpy.context.scene.ug_props
+initial_face_areas = []  # storage for initial face areas
 
 def extrude_cells_hyperbolic(niter, bm, bmt, speeds, new_ugfaces, \
-                             initial_face_areas, is_last_layer):
+                             is_last_layer):
     '''Extrude new cells from current face selection. Initial faces
     argument provides optional list of initial UGFaces whose normal direction
     is reversed at the end.
@@ -40,6 +41,12 @@ def extrude_cells_hyperbolic(niter, bm, bmt, speeds, new_ugfaces, \
     import bmesh
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+
+    # Save initial face areas (used for scaling extrusion length)
+    global initial_face_areas
+    if niter == 0:
+        initial_face_areas = \
+            [f.calc_area() for f in bm.faces if f.select]
 
     # Selected faces are base faces for extrusion. New cell index number is
     # index number of mesh face in faces list. Actual UGCell index

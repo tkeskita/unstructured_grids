@@ -103,10 +103,6 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(ob.data)  # Actual mesh
         bmt = bmesh.new()  # Trajectory mesh
 
-        # Save initial face areas (used for scaling extrusion length)
-        initial_face_areas = \
-            [f.calc_area() for f in bm.faces if f.select]
-
         # Extrude layers
         for i in range(ug_props.extrusion_layers):
             is_last_layer = (i == (ug_props.extrusion_layers - 1))
@@ -120,7 +116,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
                     ug_hyperbolic.extrude_cells_hyperbolic(\
                         niter, bm, bmt, speeds, new_ugfaces, \
-                        initial_face_areas, is_last_layer)
+                        is_last_layer)
             t1 = time.time()
 
             l.debug("Extruded layer %d, " % (i + 1) \
