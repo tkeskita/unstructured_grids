@@ -154,6 +154,12 @@ class UGProperties(bpy.types.PropertyGroup):
                 "Use experimental hyperbolic extrusion method",
                 1,
             ),
+            (
+                "shell",
+                "Shell Extrusion (under development!)",
+                "Use experimental shell extrusion method",
+                2,
+            ),
         },
         default="fixed",
     )

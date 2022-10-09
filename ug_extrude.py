@@ -26,7 +26,7 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 
-fulldebug = False # Set to True if you wanna see walls of logging debug
+fulldebug = True # Set to True if you wanna see walls of logging debug
 print_iterations = True # Set to True to print iteration stats for hyperbolic extrusion
 
 # Blender coordinates are stored in single precision floats,
@@ -115,6 +115,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                 from . import ug_hyperbolic
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
                     ug_hyperbolic.extrude_cells_hyperbolic(\
+                        niter, bm, bmt, speeds, new_ugfaces, \
+                        is_last_layer)
+            elif ug_props.extrusion_method == "shell":
+                from . import ug_shell
+                niter, bm, bmt, nf, speeds, new_ugfaces = \
+                    ug_shell.extrude_cells_shell(\
                         niter, bm, bmt, speeds, new_ugfaces, \
                         is_last_layer)
             t1 = time.time()
@@ -496,14 +502,17 @@ def get_vertex_normal_speeds(verts, faces, fis_of_vis):
 
 def calculate_convexity_sums(bm, verts, faces):
     '''Calculate sum of convexities for verts.
+
     Convexity is a measure of face-face angles:
     Convexity value near 0 means extremely sharp concave angle.
     Convexity value 0.25 means 90 degree concave angle.
     Convexity calue 0.5 means flat terrain (neither concave or convex).
     Convexity value 0.75 means 90 degree convex angle.
     Convexity value near 1 means extremely convex hole.
+
     Convexity sum is the sum of (convexity - 0.5) > 0 values
-    calculated for all convex edges surrounding each vertex.
+    calculated for all convex edges surrounding each vertex, so
+    sum > 0 and can be also > 1
     '''
 
     # Calculate convexity sums
@@ -537,6 +546,7 @@ def calculate_convexity_sums(bm, verts, faces):
 
                 if convexity > 0.5:
                     convexity_sum += (convexity - 0.5)
+        if fulldebug: l.debug("  convexity_sum = %f" % convexity_sum)
         convexity_sums.append(convexity_sum)
     return convexity_sums
 
@@ -716,7 +726,7 @@ def cast_vertices(bm, base_verts, speeds, df):
     ug_props = bpy.context.scene.ug_props
     top_verts = []
 
-    # Cast new vertices very small distance ahead
+    # Cast new vertices
     for i in range(len(base_verts)):
         if ug_props.extrusion_method == "fixed":
             newco = base_verts[i].co + speeds[i]
