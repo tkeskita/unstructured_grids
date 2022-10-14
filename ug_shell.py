@@ -72,6 +72,15 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
     add_base_face_to_cells(base_faces, ugci0)
     thickness_update()
 
+    # Trajectory bmesh
+    if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
+        for v, speed in zip(base_verts, speeds):
+            v0 = bmt.verts.new(v.co)
+            v1 = bmt.verts.new(v.co + speed)
+            bmt.edges.new([v0, v1])
+        bmt.verts.ensure_lookup_table()
+        bmt.verts.index_update()
+
     return niter, bm, bmt, len(base_faces), speeds, new_ugfaces
 
 
@@ -100,7 +109,7 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
         if is_corners[vi] or is_boundaries[vi]:
             weights[vi] = boundary_weight
 
-    niter = 3  # Number of direction propagation iterations
+    niter = 6  # Number of direction propagation iterations
     ext_len = ug_props.extrusion_thickness
 
     for i in range(niter):
