@@ -26,7 +26,7 @@ from . import ug_op
 import logging
 l = logging.getLogger(__name__)
 
-fulldebug = True # Set to True if you wanna see walls of logging debug
+fulldebug = False # Set to True if you wanna see walls of logging debug
 print_iterations = True # Set to True to print iteration stats for hyperbolic extrusion
 
 # Blender coordinates are stored in single precision floats,

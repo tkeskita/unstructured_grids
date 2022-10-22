@@ -65,6 +65,7 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
             is_corners, is_boundaries
         )
 
+    speeds = adjust_speeds(bm, base_verts, speeds)
     bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
                                   base_faces, fis2edges, ugci0, ugfi0)
@@ -109,7 +110,7 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
         if is_corners[vi] or is_boundaries[vi]:
             weights[vi] = boundary_weight
 
-    niter = 6  # Number of direction propagation iterations
+    niter = 12  # Number of direction propagation iterations
     ext_len = ug_props.extrusion_thickness
 
     for i in range(niter):
@@ -130,3 +131,37 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
         speeds = list(new_speeds)
 
     return speeds
+
+
+def adjust_speeds(bm, base_verts, speeds):
+    '''Scale up speed vectors to ensure layer thickness
+    '''
+
+    thickness = ug_props.extrusion_thickness
+    scaled_speeds = []
+    from mathutils.bvhtree import BVHTree
+    bt = BVHTree.FromBMesh(bm)
+
+    # For each top point, cast rays towards inverse neighbor face
+    # normal direction and find the smallest ray length, which is used
+    # to scale the speed.
+    for v, speed in zip(base_verts, speeds):
+        min_len = 1.0e+38  # Practical single precision float max
+        co = v.co + speed
+        for ray_dir in [-1.0 * f.normal for f in v.link_faces]:
+            hit_co, hit_nor, hit_index, hit_length = \
+                bt.ray_cast(co, ray_dir)
+            if not hit_co:
+                continue
+            ray_len = (co - hit_co).length
+            if ray_len < min_len:
+                min_len = ray_len
+
+        if min_len < thickness:
+            scale = thickness/min_len
+            # scale = min(scale, 2.0)  # Should scale be optionally limited?
+            scaled_speeds.append(scale * speed)
+        else:
+            scaled_speeds.append(speed)
+
+    return scaled_speeds
