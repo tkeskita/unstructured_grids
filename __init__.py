@@ -169,6 +169,11 @@ class UGProperties(bpy.types.PropertyGroup):
         default=10,
         min=1, max=10000000
     )
+    shell_ensure_thickness: bpy.props.BoolProperty(
+        name="Ensure Layer Thickness",
+        description="Scale Extrusion Length to Ensure Layer Thickness (Shell Extrusion)",
+        default=True,
+    )
     extrusion_courant_number: bpy.props.FloatProperty(
         name="Extrusion Courant Number",
         description="Courant Number Used to Calculate Iteration Step Size",
@@ -254,14 +259,16 @@ def menu_export_vtu(self, context):
                          icon='EXPERIMENTAL'
     )
 
+
 @persistent
 def load_handler(dummy):
     '''Updates UG data from string variables after loading Blend file'''
 
+    l.debug("Executing load_post handler")
+    ug.remove_ug_object_and_data()
     ug_props = bpy.context.scene.ug_props
     if len(ug_props.text_points) == 0:
         return None
-    l.debug("Executing load_post handler")
     bpy.ops.unstructured_grids.polymesh_to_ug()
 
 
@@ -269,10 +276,10 @@ def load_handler(dummy):
 def save_handler(dummy):
     '''Updates string variables from UG data before saving Blend file'''
 
+    l.debug("Executing pre_save handler")
     ug_props = bpy.context.scene.ug_props
     if len(ug.ugcells) == 0 or not ug.get_ug_object():
         return None
-    l.debug("Executing pre_save handler")
     bpy.ops.unstructured_grids.update_all_from_blender()
 
 
@@ -373,6 +380,8 @@ class VIEW3D_PT_UG_GUI:
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')
         if ug_props.extrusion_method == "shell":
+            row = layout.row()
+            row.prop(ug_props, "shell_ensure_thickness")
             row = layout.row()
             row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()

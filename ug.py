@@ -318,10 +318,8 @@ def delete_ug_object():
     bpy.data.meshes.remove(mesh)
 
 
-def initialize_ug_object():
-    '''Creates and returns an initialized and empty UG mesh object and
-    initializes UG data
-    '''
+def remove_ug_object_and_data():
+    '''Remove UG mesh object and clear UG data'''
 
     global ugverts, ugfaces, ugcells, ugboundaries, ugzones
 
@@ -332,11 +330,18 @@ def initialize_ug_object():
     ugboundaries = []
     ugzones = []
 
-    # Initialize mesh object
+    # Delete UG object
     ob = get_ug_object()
     if ob:
         delete_ug_object()
 
+
+def initialize_ug_object():
+    '''Creates and returns an initialized and empty UG mesh object and
+    initializes UG data
+    '''
+
+    remove_ug_object_and_data()
     l.debug("Create and activate new mesh object " + obname)
     mesh_data = bpy.data.meshes.new(obname)
     ob = bpy.data.objects.new(obname, mesh_data)

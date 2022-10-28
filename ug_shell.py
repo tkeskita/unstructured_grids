@@ -64,8 +64,8 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
             bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
             is_corners, is_boundaries
         )
-
-    speeds = adjust_speeds(bm, base_verts, speeds)
+    if ug_props.shell_ensure_thickness:
+        speeds = adjust_speeds(bm, base_verts, speeds)
     bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
                                   base_faces, fis2edges, ugci0, ugfi0)
