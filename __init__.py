@@ -145,19 +145,19 @@ class UGProperties(bpy.types.PropertyGroup):
             (
                 "fixed",
                 "Fixed Extrusion",
-                "Use fixed normal direction and length for extrusion",
+                "Use Fixed Vertex Normal Direction and Length for Extrusion",
                 0,
             ),
             (
                 "hyperbolic",
-                "Hyperbolic Extrusion",
-                "Use experimental hyperbolic extrusion method",
+                "Hyperbolic Extrusion (experimental!)",
+                "Use Experimental Hyperbolic Extrusion Method",
                 1,
             ),
             (
                 "shell",
-                "Shell Extrusion (under development!)",
-                "Use experimental shell extrusion method",
+                "Shell Extrusion",
+                "Shell Boundary Layer Extrusion Method",
                 2,
             ),
         },
@@ -346,9 +346,9 @@ class VIEW3D_PT_UG_GUI:
         row = layout.row()
         row.label(text="Extrusion Settings:")
         row = layout.row()
-        row.prop(ug_props, "extrusion_layers", text="Layers")
+        row.prop(ug_props, "extrusion_method", text="")
         row = layout.row()
-        row.prop(ug_props, "extrusion_method")
+        row.prop(ug_props, "extrusion_layers", text="Layers")
         row = layout.row()
         row.prop(ug_props, "extrusion_thickness", text="Thickness")
         row = layout.row()

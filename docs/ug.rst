@@ -121,30 +121,59 @@ Extrusion of New Cells
 **Extrude Cells** operator creates new cells from face selection based
 on Extrusion Settings shown on the Toolbar.
 
-- *Layers* specifies the number of layers for extrusion
+- *Extrustion Method* drop-down menu lists options for available extrusion methods:
 
-- *Use Fixed Extrusion Method* button with icon determines the method
-  used in extrusion:
+  - **Fixed Extrusion Method** is the most basic method. New cells are
+    created by extruding each selected face vertex towards the vertex
+    normal direction.
 
-  - **Fixed extrusion method** is used when the button is on
-    (default). Extrusion direction is fixed to initial vertex normal
-    direction.
+  - **Shell Extrusion Method** is a tool for adding flat cells on top
+    of an existing surface mesh. This method extrudes each selected
+    vertex in a direction, which is iteratively adjusted by
+    surrounding vertex extrusion directions. Idea is to apply a
+    direction which reduces the risk of intersections near convex
+    shapes. This method is meant for adding thin boundary layers on
+    top of a boundary surface mesh.
 
-  - **Hyperbolic extrusion method** is applied when the button is off.
-    This is an experimental extrusion method which is under
-    development and is not currently supported.
+    .. warning::
 
-- *Thickness* specifies the height for the extruded cell layer.
+        This method may create highly non-orthogonal or skewed
+        faces. The method creates intersecting faces for highly convex
+        shapes and shapes where two extrusion fronts meet.
+
+    - **Ensure Layer Thickness** option scales extrusion length for
+      the Shell Extrusion Method so that the layer thickness specified
+      in the *Thickness* option is approximately reached. This option
+      may cause increase of layer thickness for convex shapes. If this
+      option is disabled, then vertex extrusion length is equal to
+      *Thickness*.
+
+  - **Hyperbolic Extrusion Method** is a highly experimental
+    hyperbolic extrusion method which is neither documented nor
+    supported.
+
+- *Layers* specifies the number of cell layers for extrusion
+
+- *Thickness* specifies the length of side edges for extruded cells or
+  target height for the extruded cell layer.
 
 - *Expression for Scaling Thickness* allows user to specify a Python
   expression which updates *Thickness* after extrusion of each
   layer. *x* in the expression is thickness. The default value
   *x\*1.0* will keep thickness constant.
 
+Note: Boundary vertices are always extruded in the vertex normal
+direction.
+
 To extrude cells, first select one or more faces in the Unstructured
 Grid object (or any mesh object for first extrusion), then run
 **Extrude Cells** operator by clicking on the named button in the
 toolbar.
+
+The following image illustrates the difference between the Fixed
+Extrusion (on left) and the Shell Extrusion (on right) methods:
+
+.. image:: images/ug_fixed_vs_shell_extrusion.png
 
 
 Storage and View Operators
