@@ -132,6 +132,13 @@ class UGProperties(bpy.types.PropertyGroup):
         precision=4,
         min=float_info.min, max=float_info.max
     )
+    extrusion_thickness_previous: bpy.props.FloatProperty(
+        name="Extrusion Thickness Previous",
+        description="Previous Extrusion Thickness",
+        default=0.0,
+        precision=4,
+        min=float_info.min, max=float_info.max
+    )
     extrusion_scale_thickness_expression: bpy.props.StringProperty(
         name="Layer Thickness (x) Scaling Expression",
         description="Python Expression to Scale Layer Thickness After Layer Addition",

@@ -316,6 +316,8 @@ def extrude_cells_fixed(bm, speeds, new_ugfaces):
         # Initial speeds from vertex normal speeds
         speeds = get_vertex_normal_speeds(base_verts, base_faces, \
                                           base_fis_of_vis)
+    else:
+        speeds = scale_speeds(speeds)
 
     bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
@@ -947,12 +949,23 @@ def thickness_update():
     x = ug_props.extrusion_thickness
     expr = ug_props.extrusion_scale_thickness_expression
     try:
+        ug_props.extrusion_thickness_previous = x
         rval = eval(expr)
         if fulldebug: l.debug("Expression returned %s" % str(rval))
         ug_props.extrusion_thickness = float(rval)
     except:
         l.error("Error in evaluating: %r" % expr)
     # TODO: Add error notification to user if expression fails
+
+
+def scale_speeds(speeds):
+    '''Scale speeds to match change in target thickness'''
+
+    ug_props = bpy.context.scene.ug_props
+    x = ug_props.extrusion_thickness
+    x0 = ug_props.extrusion_thickness_previous
+    scaled_speeds = [val*(x/x0) for val in speeds]
+    return scaled_speeds
 
 
 def flip_initial_faces(bm, initial_ugfaces):
