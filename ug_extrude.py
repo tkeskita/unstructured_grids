@@ -110,8 +110,8 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 
             t0 = time.time()
             if ug_props.extrusion_method == "fixed":
-                bm, nf, speeds, new_ugfaces = extrude_cells_fixed( \
-                    bm, speeds, new_ugfaces)
+                bm, bmt, nf, speeds, new_ugfaces = extrude_cells_fixed( \
+                    bm, bmt, speeds, new_ugfaces)
             elif ug_props.extrusion_method == "hyperbolic":
                 from . import ug_hyperbolic
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
@@ -250,11 +250,7 @@ def initialize_extrusion():
 def recreate_trajectory_object(bm):
     '''Replace trajectory object mesh with argument mesh'''
 
-    # Do nothing in fixed extrusion mode
     ug_props = bpy.context.scene.ug_props
-    if ug_props.extrusion_method == "fixed":
-        return None
-
     obname = "Extrusion Trajectory"
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -291,7 +287,7 @@ def check_hanging_face_verts(bm):
     return vertlist
 
 
-def extrude_cells_fixed(bm, speeds, new_ugfaces):
+def extrude_cells_fixed(bm, bmt, speeds, new_ugfaces):
     '''Extrude new cells from current face selection using a simple
     extrusion method, where extrusion direction vector (speeds)
     point towards initial vertex normal direction.
@@ -330,7 +326,16 @@ def extrude_cells_fixed(bm, speeds, new_ugfaces):
     add_base_face_to_cells(base_faces, ugci0)
     thickness_update()
 
-    return bm, len(base_faces), speeds, new_ugfaces
+    # Trajectory bmesh
+    if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
+        for v, speed in zip(base_verts, speeds):
+            v0 = bmt.verts.new(v.co)
+            v1 = bmt.verts.new(v.co + speed)
+            bmt.edges.new([v0, v1])
+        bmt.verts.ensure_lookup_table()
+        bmt.verts.index_update()
+
+    return bm, bmt, len(base_faces), speeds, new_ugfaces
 
 
 def get_verts_and_relations(faces):

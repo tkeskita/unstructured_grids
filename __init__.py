@@ -387,8 +387,6 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "extrusion_minimum_geometric_frac")
 
             row = layout.row()
-            row.prop(ug_props, "extrusion_create_trajectory_object")
-            row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')
         if ug_props.extrusion_method == "shell":
@@ -397,11 +395,11 @@ class VIEW3D_PT_UG_GUI:
             row = layout.row()
             row.prop(ug_props, "check_for_intersections")
             row = layout.row()
-            row.prop(ug_props, "extrusion_create_trajectory_object")
-            row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')
         else:
+            row = layout.row()
+            row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
 
