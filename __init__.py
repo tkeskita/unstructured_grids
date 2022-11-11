@@ -181,6 +181,11 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Scale Extrusion Length to Ensure Layer Thickness (Shell Extrusion)",
         default=True,
     )
+    check_for_intersections: bpy.props.BoolProperty(
+        name="Check for Intersections",
+        description="Check for Intersecting Faces in Extrusion",
+        default=False,
+    )
     extrusion_courant_number: bpy.props.FloatProperty(
         name="Extrusion Courant Number",
         description="Courant Number Used to Calculate Iteration Step Size",
@@ -389,6 +394,8 @@ class VIEW3D_PT_UG_GUI:
         if ug_props.extrusion_method == "shell":
             row = layout.row()
             row.prop(ug_props, "shell_ensure_thickness")
+            row = layout.row()
+            row.prop(ug_props, "check_for_intersections")
             row = layout.row()
             row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()

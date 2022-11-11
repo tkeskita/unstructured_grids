@@ -119,7 +119,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                         is_last_layer)
             elif ug_props.extrusion_method == "shell":
                 from . import ug_shell
-                niter, bm, bmt, nf, speeds, new_ugfaces = \
+                niter, bm, bmt, nf, speeds, new_ugfaces, info_text = \
                     ug_shell.extrude_cells_shell(\
                         niter, bm, bmt, speeds, new_ugfaces, \
                         is_last_layer)
@@ -142,7 +142,10 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Return to original mode
         bpy.ops.object.mode_set(mode=mode)
 
-        self.report({'INFO'}, "Extruded %d new cells" % n)
+        text = "Extruded %d new cells." % n
+        if info_text:
+            text += " " + info_text
+        self.report({'INFO'}, text)
         return {'FINISHED'}
 
 
@@ -979,10 +982,95 @@ def flip_initial_faces(bm, initial_ugfaces):
         ugf.invert_face_dir()
 
 
+def check_for_intersections(bm, top_verts):
+    '''Find verts which would cause intersections if top faces were
+    created to top verts
+    '''
+
+    from mathutils.bvhtree import BVHTree
+    perturbation_length = 1.0e-3 * get_max_bbox_length(bm)
+    bt = BVHTree.FromBMesh(bm, epsilon=1e-6)
+    intersecting_verts = []
+    l.debug("Checking %d vertices for face intersections" % len(top_verts)
+        + " using perturbation length " + str(perturbation_length))
+    for v in top_verts:
+        if perturbed_intersection(perturbation_length, bt, v):
+            intersecting_verts.append(v)
+    l.debug("Found %d intersecting vertices" % len(intersecting_verts))
+    return intersecting_verts
+
+
+def perturbed_intersection(length, bt, v):
+    '''Find intersecting vertices by ray casting tests from perturbed
+    point location of vertex v and argument bvhtree. Argument length
+    is the perturbation length, used for shifting start positions for
+    ray casting.
+
+    Algorithm description: Cast rays towards neigbour vertices from a
+    point location slightly off from current vertex v. If ray hits a
+    (non-neighbour) face at a point which is clearly closer than the
+    distance to the neighbour vertex, then an intersection has been
+    found. Several starting points for ray casting are tried out in an
+    attempt to increase chances of finding an intersecting face.
+    '''
+
+    CLOSEBY = 0.99  # Minimum fraction for relative length testing
+    MIN_LEN = 1e-4  # Minimum required edge relative length
+    from mathutils import Vector
+    perturbation_points=[  # Cubic perturbation pattern
+        Vector((1.0, 1.0, 1.0)),
+        Vector((-1.0, 1.0, 1.0)),
+        Vector((1.0, -1.0, 1.0)),
+        Vector((-1.0, -1.0, 1.0)),
+        Vector((1.0, 1.0, -1.0)),
+        Vector((-1.0, 1.0, -1.0)),
+        Vector((1.0, -1.0, -1.0)),
+        Vector((-1.0, -1.0, -1.0)),
+    ]
+    neighbour_face_indices = [f.index for f in v.link_faces]
+
+    for nv in get_neighbour_verts(v):
+        for co in [v.co + length*x for x in perturbation_points]:
+            # bm.verts.new((co))  # Enable to see ray cast locations
+            # Cast a ray towards neighbour vertex
+            nvec = nv.co - co
+            hit_co, hit_nor, hit_index, hit_length = \
+                bt.ray_cast(co, nvec)
+            if not hit_co:
+                continue
+
+            # Check that face is not a face of this vertex
+            if hit_index in neighbour_face_indices:
+                continue
+
+            # Check that relative ray length is in acceptable range
+            ray_len = (co - hit_co).length
+            rlen = ray_len / nvec.length
+            if rlen < MIN_LEN:
+                continue
+            if rlen > CLOSEBY:
+                continue
+            return True
+    return False
+
+
+def get_neighbour_verts(v):
+    '''Return list of neighbour vertices (connected by edges) for argument vertex'''
+
+    vlist = []
+    for e in v.link_edges:
+        if e.verts[0] == v:
+            vlist.append(e.verts[1])
+        elif e.verts[1] == v:
+            vlist.append(e.verts[0])
+    return vlist
+
+
 ##### Generic help functions #####
 
 
 def add_entry(lol, i, val):
+
     '''Add entry val to list with index i into list of lists lol'''
     if i == len(lol):
         lol.append([])
@@ -993,3 +1081,31 @@ def add_entry(lol, i, val):
         raise ValueError("Illegal index %d, list length %d" % (i, len(lol)))
 
 
+def get_max_bbox_length(bm):
+    '''Return maximum side length of bounding box for argument bmesh'''
+
+    MAXVAL = 1e+38
+    xmin = MAXVAL
+    xmax = -MAXVAL
+    ymin = MAXVAL
+    ymax = -MAXVAL
+    zmin = MAXVAL
+    zmax = -MAXVAL
+    l.debug("Calculating bounding box")
+    for v in bm.verts:
+        if v.co.x < xmin:
+            xmin = v.co.x
+        if v.co.x > xmax:
+            xmax = v.co.x
+        if v.co.y < ymin:
+            ymin = v.co.y
+        if v.co.y > ymax:
+            ymax = v.co.y
+        if v.co.z < zmin:
+            zmin = v.co.z
+        if v.co.z > zmax:
+            zmax = v.co.z
+    xlen = xmax - xmin
+    ylen = ymax - ymin
+    zlen = zmax - zmin
+    return max((xlen, ylen, zlen))

@@ -38,6 +38,7 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
     import bmesh
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+    info_text = ""
 
     # Selected faces are base faces for extrusion. New cell index number is
     # index number of mesh face in faces list. Actual UGCell index
@@ -66,15 +67,26 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
         )
     else:
         speeds = scale_speeds(speeds)
-
     if ug_props.shell_ensure_thickness:
         speeds = adjust_speeds(bm, base_verts, speeds)
+
     bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
                                   base_faces, fis2edges, ugci0, ugfi0)
     correct_face_normals(bm, base_faces, ugci0)
     add_base_face_to_cells(base_faces, ugci0)
     thickness_update()
+
+    if ug_props.check_for_intersections:
+        intersecting_verts = check_for_intersections(bm, top_verts)
+        if intersecting_verts:
+            bm.select_mode = {'VERT'}
+            for f in bm.verts:
+                f.select = False
+            for v in intersecting_verts:
+                v.select = True
+            bm.select_flush_mode()
+            info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
 
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
@@ -85,7 +97,7 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
         bmt.verts.ensure_lookup_table()
         bmt.verts.index_update()
 
-    return niter, bm, bmt, len(base_faces), speeds, new_ugfaces
+    return niter, bm, bmt, len(base_faces), speeds, new_ugfaces, info_text
 
 
 def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
