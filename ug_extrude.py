@@ -102,6 +102,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(ob.data)  # Actual mesh
         bmt = bmesh.new()  # Trajectory mesh
+        info_text = ""  # Additional info for user
 
         # Extrude layers
         for i in range(ug_props.extrusion_layers):

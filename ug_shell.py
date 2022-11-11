@@ -114,21 +114,22 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
 
     # Weight calculation
     minimum_weight = 0.25
-    boundary_weight = 0.75
+    max_weight = 0.75
     weights = []
     for c in convexity_sums:
         if c > minimum_weight:
-            weights.append(c)
+            weights.append(min(c, max_weight))
         else:
             weights.append(minimum_weight)
     for vi in range(len(base_verts)):
         if is_corners[vi] or is_boundaries[vi]:
-            weights[vi] = boundary_weight
+            weights[vi] = max_weight
 
     niter = 12  # Number of direction propagation iterations
     ext_len = ug_props.extrusion_thickness
 
     for i in range(niter):
+        l.debug("Direction propagation iteration %d" % i)
         new_speeds = []
         for vi, v in enumerate(base_verts):
             # Corners and boundaries use initial speed
@@ -174,7 +175,7 @@ def adjust_speeds(bm, base_verts, speeds):
 
         if min_len < thickness:
             scale = thickness/min_len
-            # scale = min(scale, 2.0)  # Should scale be optionally limited?
+            scale = min(scale, 2.0)  # Should this be an option?
             scaled_speeds.append(scale * speed)
         else:
             scaled_speeds.append(speed)
