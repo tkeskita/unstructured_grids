@@ -60,7 +60,6 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
                        base_fis_of_vis, ibasevertmap)
 
     if len(speeds) == 0:
-        # Initial speeds from vertex normal speeds
         speeds = get_shell_speeds( \
             bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
             is_corners, is_boundaries
@@ -113,38 +112,57 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
     convexity_sums = calculate_convexity_sums(bm, base_verts, base_faces)
 
     # Weight calculation
-    minimum_weight = 0.25
-    max_weight = 0.75
-    weights = []
+    minimum_weight = 0.1
+    max_weight = 2.0
+    weights = []  # Weight factors for verts
     for c in convexity_sums:
         if c > minimum_weight:
             weights.append(min(c, max_weight))
         else:
             weights.append(minimum_weight)
-    for vi in range(len(base_verts)):
-        if is_corners[vi] or is_boundaries[vi]:
-            weights[vi] = max_weight
+    for i in range(len(base_verts)):
+        if is_corners[i] or is_boundaries[i]:
+            weights[i] = max_weight
 
     niter = 12  # Number of direction propagation iterations
+    nw_factor = 0.2  # New weight increase factor
     ext_len = ug_props.extrusion_thickness
 
-    for i in range(niter):
-        l.debug("Direction propagation iteration %d" % i)
-        new_speeds = []
-        for vi, v in enumerate(base_verts):
+    for iter in range(niter):
+        l.debug("Direction propagation iteration %d" % iter)
+        new_speeds = list()
+        new_weights = list()
+
+        # Calculate new speed
+        for i in range(len(base_verts)):
             # Corners and boundaries use initial speed
-            if is_corners[vi] or is_boundaries[vi]:
-                new_speeds.append(speeds[vi])
+            if is_corners[i] or is_boundaries[i]:
+                new_speeds.append(speeds[i])
+                new_weights.append(weights[i])
                 continue
 
             # New speed calculation
-            new_speed = weights[vi] * speeds[vi]
-            for nvi in neighbour_vis_of_vi[vi]:
-                new_speed += weights[nvi] * speeds[nvi]
+            own_w = weights[i]
+            own_weight_factor = (1.0 + own_w)**6.0 - 1.0 + own_w
+            new_speed = own_weight_factor * speeds[i]
+            max_nw = 0.0  # Maximum neighbour weight
+            # Neighbour contribution
+            for nvi in neighbour_vis_of_vi[i]:
+                w = weights[nvi]
+                new_speed += w * speeds[nvi]
+                max_nw = max(max_nw, w)
+            # Final scaling
             new_speed.normalize()
             new_speed *= ext_len  # Set velocity to minimum velocity
             new_speeds.append(new_speed)
+
+            # Calculate new weight based on maximum neigbour weight
+            nw = nw_factor * max_nw + (1.0 - nw_factor) * own_w
+            nw = max(own_w, nw)
+            new_weights.append(nw)
+
         speeds = list(new_speeds)
+        weights = list(new_weights)
 
     return speeds
 

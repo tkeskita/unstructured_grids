@@ -186,6 +186,13 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Check for Intersecting Faces in Extrusion",
         default=False,
     )
+    perturbation_factor: bpy.props.FloatProperty(
+        name="Perturbation Factor",
+        description="Bounding Box Length Scaling Factor to Calculate Perturbation Length for Intersection Detection",
+        default=1e-4,
+        precision=6,
+        min=1e-12, max=1e-1
+    )
     extrusion_courant_number: bpy.props.FloatProperty(
         name="Extrusion Courant Number",
         description="Courant Number Used to Calculate Iteration Step Size",
@@ -394,6 +401,8 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "shell_ensure_thickness")
             row = layout.row()
             row.prop(ug_props, "check_for_intersections")
+            row = layout.row()
+            row.prop(ug_props, "perturbation_factor")
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')

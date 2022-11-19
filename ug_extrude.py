@@ -994,7 +994,8 @@ def check_for_intersections(bm, top_verts):
     '''
 
     from mathutils.bvhtree import BVHTree
-    perturbation_length = 1.0e-3 * get_max_bbox_length(bm)
+    ug_props = bpy.context.scene.ug_props
+    perturbation_length = ug_props.perturbation_factor * get_max_bbox_length(bm)
     bt = BVHTree.FromBMesh(bm, epsilon=1e-6)
     intersecting_verts = []
     l.debug("Checking %d vertices for face intersections" % len(top_verts)
