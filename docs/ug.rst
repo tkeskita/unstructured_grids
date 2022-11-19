@@ -1,5 +1,5 @@
-Unstructured Grids Addon for Blender 2.8
-========================================
+Unstructured Grids Addon for Blender
+====================================
 
 .. image:: images/ug_title.png
 
@@ -7,7 +7,7 @@ Introduction
 ------------
 
 `Unstructured Grids (UG) <https://github.com/tkeskita/unstructured_grids>`_
-is an add-on for `Blender 2.80 (or a later version) <https://www.blender.org>`_
+is an add-on for `Blender <https://www.blender.org>`_
 for creating, importing, editing and exporting of
 3D finite volume meshes composed of arbitrary polyhedron cells (a.k.a 
 `3D unstructured grids <https://en.wikipedia.org/wiki/Unstructured_grid>`_.
@@ -54,6 +54,8 @@ Main Features and Limitations
   mesh object contents in sync.
 
 - **Many operations are slow for large meshes.**
+
+- Tested on Blender LTS version 2.93.
 
 
 Installation
@@ -125,15 +127,17 @@ on Extrusion Settings shown on the Toolbar.
 
   - **Fixed Extrusion Method** is the most basic method. New cells are
     created by extruding each selected face vertex towards the vertex
-    normal direction.
+    normal direction. Vertex extrusion length is equal to
+    *Thickness*. No checks for result quality or possible
+    intersections are made.
 
   - **Shell Extrusion Method** is a tool for adding flat cells on top
     of an existing surface mesh. This method extrudes each selected
-    vertex in a direction, which is iteratively adjusted by
-    surrounding vertex extrusion directions. Idea is to apply a
-    direction which reduces the risk of intersections near convex
-    shapes. This method is meant for adding thin boundary layers on
-    top of a boundary surface mesh.
+    vertex in a direction, which is iteratively adjusted using
+    surrounding vertex extrusion directions. The aim of this method is
+    to apply an extrusion direction which reduces the risk of
+    intersections near convex shapes. This method is meant for adding
+    thin boundary layers on top of a boundary surface mesh.
 
     .. warning::
 
@@ -148,9 +152,36 @@ on Extrusion Settings shown on the Toolbar.
       option is disabled, then vertex extrusion length is equal to
       *Thickness*.
 
-  - **Hyperbolic Extrusion Method** is a highly experimental
-    hyperbolic extrusion method which is neither documented nor
-    supported.
+    - **Check for Intersections** enables intersection detection in
+      extrusion. Intersections can occur when extrusion directions of
+      adjacent vertices cross each other. This happens when extrusion
+      thickness is too large for the Shell Extrusion Method. There is
+      no definite value for when intersections start to occur. If this
+      option is enabled and intersections are detected, a warning is
+      issued in Blender info text (text shown in Blender bottom bar),
+      and intersecting vertices are selected (highlighted in Vertex
+      Select Mode).
+
+      The intersection detection algorithm casts rays from numerous
+      starting points slighly away (perturbed locations) from each
+      vertex towards neighbour vertices. Intersection is assumed to
+      occur if a ray hits a non-neighbour face. The perturbation
+      length (how far away ray casting start point is from current
+      vertex) is calculated from the mesh as: maximum bounding box
+      side length, multiplied by Perturbation Factor. For example, a
+      Perturbation Factor value of 0.0001 means that if maximum
+      bounding box side length for the mesh is e.g. 10 m, then vertex
+      location is perturbed by 1 mm in the intersection detection.
+
+    - **Perturbation Factor** determines the perturbation length scale
+      factor for the intersection detection algorithm (see above). The
+      value of Perturbation Factor affects the accuracy of the
+      intersection detection, so you may try to change this value if
+      the result of intersection detection is bad.
+
+  - **Hyperbolic Extrusion Method** is a highly experimental extrusion
+    method which is neither documented nor supported. Do not use, for
+    development and testing purposes only.
 
 - *Layers* specifies the number of cell layers for extrusion
 

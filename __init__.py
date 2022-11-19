@@ -401,8 +401,9 @@ class VIEW3D_PT_UG_GUI:
             row.prop(ug_props, "shell_ensure_thickness")
             row = layout.row()
             row.prop(ug_props, "check_for_intersections")
-            row = layout.row()
-            row.prop(ug_props, "perturbation_factor")
+            if ug_props.check_for_intersections:
+                row = layout.row()
+                row.prop(ug_props, "perturbation_factor")
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')

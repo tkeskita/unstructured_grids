@@ -5,7 +5,7 @@
 ## Introduction
 
 [Unstructured Grids (UG)](https://github.com/tkeskita/unstructured_grids)
-is an add-on for [Blender 2.80 (or a later version)](https://www.blender.org)
+is an add-on for [Blender](https://www.blender.org)
 for creating, importing, editing and exporting of
 3D volume meshes composed of arbitrary polyhedron cells (a.k.a [3D
 unstructured grids](https://en.wikipedia.org/wiki/Unstructured_grid)).
@@ -22,8 +22,8 @@ is assumed to know Blender modelling and material systems on a basic
 level.
 
 The add-on has been tested with
-[Blender 2.82a](https://www.blender.org/) and
-[OpenFOAM Foundation](https://openfoam.org/) version 7 of OpenFOAM.
+[Blender 2.93 LTS version](https://www.blender.org/) and
+[OpenFOAM Foundation](https://openfoam.org/) version 9 of OpenFOAM.
 
 
 ## Documentation

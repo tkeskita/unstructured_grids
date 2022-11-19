@@ -86,6 +86,8 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
                 v.select = True
             bm.select_flush_mode()
             info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
+        else:
+            info_text = "No intersections detected."
 
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
