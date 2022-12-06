@@ -26,19 +26,18 @@ from . import ug_op
 from .ug_extrude import *
 import logging
 l = logging.getLogger(__name__)
+ic_ob_name = 'Interactive Correction'  # Name for interactive correction object
 
-ug_props = bpy.context.scene.ug_props
 
 def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
-                             is_last_layer):
+                        is_last_layer):
     '''Extrude new cells from current face selection using shell extrusion
     method
     '''
 
     import bmesh
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
     info_text = ""
+    ug_props = bpy.context.scene.ug_props
 
     # Selected faces are base faces for extrusion. New cell index number is
     # index number of mesh face in faces list. Actual UGCell index
@@ -46,28 +45,33 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
     base_faces = [f for f in bm.faces if f.select]
     if fulldebug: l.debug("Face count at beginning: %d" % len(base_faces))
 
-    ugci0 = len(ug.ugcells) # Number of UGCells before extruding
-    ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
-
+    # Get topology information from mesh
     base_verts, base_vis_of_fis, base_fis_of_vis, ibasevertmap = \
         get_verts_and_relations(base_faces)
     base_edges, edge2sideface_index, fis2edges = get_edges_and_face_map(base_faces)
-    new_ugfaces = create_UG_verts_faces_and_cells(base_verts, base_edges, base_faces, new_ugfaces)
     neighbour_vis_of_vi, fils_of_neighbour_vis = \
         get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
     is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
         classify_verts(base_verts, base_edges, base_faces, \
                        base_fis_of_vis, ibasevertmap)
 
-    if len(speeds) == 0:
-        speeds = get_shell_speeds( \
-            bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
-            is_corners, is_boundaries
-        )
+    ugci0 = len(ug.ugcells) # Number of UGCells before extruding
+    ugfi0 = len(ug.ugfaces) # Number of UGFaces before extruding
+    new_ugfaces = create_UG_verts_faces_and_cells(base_verts, base_edges, base_faces, new_ugfaces)
+
+    if ug_props.interactive_correction_mode and len(speeds) == 0:
+        speeds = get_speeds_from_interactive_correction(base_verts)
+        delete_object(ic_ob_name)
     else:
-        speeds = scale_speeds(speeds)
-    if ug_props.shell_ensure_thickness:
-        speeds = adjust_speeds(bm, base_verts, speeds)
+        if len(speeds) == 0:
+            speeds = get_shell_speeds( \
+                bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
+                is_corners, is_boundaries
+            )
+        else:
+            speeds = scale_speeds(speeds)
+        if ug_props.shell_ensure_thickness:
+            speeds = adjust_speeds(bm, base_verts, speeds)
 
     bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
@@ -78,16 +82,16 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
 
     if ug_props.check_for_intersections:
         intersecting_verts = check_for_intersections(bm, top_verts)
+        bm.select_mode = {'VERT'}
+        for f in bm.verts:
+            f.select = False
         if intersecting_verts:
-            bm.select_mode = {'VERT'}
-            for f in bm.verts:
-                f.select = False
             for v in intersecting_verts:
                 v.select = True
-            bm.select_flush_mode()
             info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
         else:
             info_text = "No intersections detected."
+        bm.select_flush_mode()
 
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
@@ -112,6 +116,7 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
 
     speeds = get_vertex_normal_speeds(base_verts, base_faces, base_fis_of_vis)
     convexity_sums = calculate_convexity_sums(bm, base_verts, base_faces)
+    ug_props = bpy.context.scene.ug_props
 
     # Weight calculation
     minimum_weight = 0.1
@@ -173,6 +178,7 @@ def adjust_speeds(bm, base_verts, speeds):
     '''Scale up speed vectors to ensure layer thickness
     '''
 
+    ug_props = bpy.context.scene.ug_props
     thickness = ug_props.extrusion_thickness
     scaled_speeds = []
     from mathutils.bvhtree import BVHTree
@@ -201,3 +207,137 @@ def adjust_speeds(bm, base_verts, speeds):
             scaled_speeds.append(speed)
 
     return scaled_speeds
+
+
+def interactively_correct_speeds(bm, base_verts, base_faces, speeds):
+    '''Create a temporary Interactive Correction object to allow user to
+    manually modify top face vertex locations before extruding cells.
+    '''
+
+    import bmesh
+    ug_props = bpy.context.scene.ug_props
+    info_text = ""
+
+    # Create top vertices with edges, and top faces
+    vertmap = {}
+    top_verts = []
+    for i, bv in enumerate(base_verts):
+        v = bm.verts.new(bv.co + speeds[i])
+        top_verts.append(v)
+        vertmap[bv] = v
+        bm.edges.new([bv, v])
+    bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
+    for i, bf in enumerate(base_faces):
+        verts = [vertmap[bv] for bv in bf.verts]
+        bm.faces.new(verts)
+    bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+
+    # TODO: This intersection search is missing side faces
+    # TODO: Code duplication
+    if ug_props.check_for_intersections:
+        intersecting_verts = check_for_intersections(bm, top_verts)
+        bm.select_mode = {'VERT'}
+        for f in bm.verts:
+            f.select = False
+        if intersecting_verts:
+            for v in intersecting_verts:
+                v.select = True
+            info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
+        else:
+            info_text = "No intersections detected."
+        bm.select_flush_mode()
+
+    # # FIXME: Highlight only extrusion side edges
+    # bm.select_mode = {'VERT'}
+    # for v in bm.verts:
+    #     v.select = False
+    # bm.select_flush_mode()
+    # bm.edges.ensure_lookup_table()
+    # bm.edges.index_update()
+    # bm.select_mode = {'EDGE'}
+    # bm.edges.ensure_lookup_table()
+    # for i in range(len(base_verts)):
+    #     bm.edges[i].select = True
+    # bm.select_flush_mode()
+
+    # Delete possibly existing old Interactive Correction object and
+    # hide other objects
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    if ic_ob_name in bpy.data.objects:
+        bpy.data.objects[ic_ob_name].select_set(True)
+        mesh = bpy.data.objects[ic_ob_name].data
+        bpy.ops.object.delete()
+        bpy.data.meshes.remove(mesh)
+    for ob in bpy.data.objects:
+        ob.hide_set(True)
+
+    # Create new Interactive correction object and make it active
+    mesh_data = bpy.data.meshes.new(ic_ob_name)
+    bm.to_mesh(mesh_data)
+    bm.free()
+    ob = bpy.data.objects.new(ic_ob_name, mesh_data)
+    bpy.context.scene.collection.objects.link(ob)
+    bpy.context.view_layer.objects.active = bpy.data.objects[ic_ob_name]
+    ob.select_set(True)
+    ob.hide_set(False)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
+    return info_text
+
+
+def prepare_interactive_correction(source_ob):
+    '''Top level routine for creating Interactive Correction object'''
+
+    import bmesh
+    ug_props = bpy.context.scene.ug_props
+    bm = create_bmesh_from_selection(source_ob)
+
+    base_faces = [f for f in bm.faces if f.select]
+    if fulldebug: l.debug("Face count at beginning: %d" % len(base_faces))
+
+    # Get topology information from mesh
+    base_verts, base_vis_of_fis, base_fis_of_vis, ibasevertmap = \
+        get_verts_and_relations(base_faces)
+    base_edges, edge2sideface_index, fis2edges = get_edges_and_face_map(base_faces)
+    neighbour_vis_of_vi, fils_of_neighbour_vis = \
+        get_face_vis_of_vi(base_verts, base_fis_of_vis, base_vis_of_fis)
+    is_corners, is_boundaries, bnvis_of_vi, anvis_of_vi = \
+        classify_verts(base_verts, base_edges, base_faces, \
+                       base_fis_of_vis, ibasevertmap)
+
+    speeds = get_shell_speeds( \
+        bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
+        is_corners, is_boundaries
+    )
+    if ug_props.shell_ensure_thickness:
+        speeds = adjust_speeds(bm, base_verts, speeds)
+
+    info_text = interactively_correct_speeds(bm, base_verts, base_faces, speeds)
+    ug_props.interactive_correction = False
+    info_text += " Interactive Correction Object created for editing. "
+    return info_text
+
+
+def get_speeds_from_interactive_correction(base_verts):
+    '''Update top vertex positions from Interactive Correction object'''
+
+    ob = bpy.data.objects[ic_ob_name]
+    speeds = []
+    nv = len(base_verts)
+    for i, v in enumerate(base_verts):
+        top_vert = ob.data.vertices[i - nv]
+        speeds.append(top_vert.co - v.co)
+    return speeds
+
+
+def delete_object(ob_name):
+    '''Delete an object and it's mesh'''
+
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.data.objects[ob_name].select_set(True)
+    mesh = bpy.data.objects[ob_name].data
+    bpy.ops.object.delete()
+    bpy.data.meshes.remove(mesh)

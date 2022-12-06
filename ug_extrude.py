@@ -25,6 +25,8 @@ from . import ug
 from . import ug_op
 import logging
 l = logging.getLogger(__name__)
+import time
+import bmesh
 
 fulldebug = False # Set to True if you wanna see walls of logging debug
 print_iterations = True # Set to True to print iteration stats for hyperbolic extrusion
@@ -82,26 +84,43 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
 
     def execute(self, context):
         mode = context.active_object.mode
+        ug_props = bpy.context.scene.ug_props
 
-        # Initialize from selected faces if needed
-        is_ok, text, initial_ugfaces = initialize_extrusion()
+        # Make sure mesh is saved to original object
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # If interactive correction is requested, prepare for it and exit
+        if ug_props.interactive_correction:
+            is_ok, text = check_requirements(context.active_object)
+            if not is_ok:
+                self.report({'ERROR'}, "Check failed: " + text)
+                return {'FINISHED'}
+            ug_props.interactive_correction_mode = True
+            if ug_props.extrusion_method == "shell":
+                from . import ug_shell
+                text = ug_shell.prepare_interactive_correction(context.active_object)
+                self.report({'INFO'}, text)
+                return {'FINISHED'}
+
+        # Initialize from selected faces in source object
+        if ug_props.extrusion_source_ob_name:
+            source_ob = bpy.data.objects[ug_props.extrusion_source_ob_name]
+        else:
+            source_ob = context.active_object
+        is_ok, text, initial_ugfaces = initialize_extrusion(source_ob)
         if not is_ok:
             self.report({'ERROR'}, "Initialization failed: " + text)
             return {'FINISHED'}
+        new_ugfaces = list(initial_ugfaces) # List of created ugfaces
+        speeds = [] # Extrusion speed vectors, can be updated per extruded layer
+        bpy.ops.object.mode_set(mode='OBJECT')
+        context.view_layer.objects.active = source_ob
+        bm = create_bmesh_from_selection(source_ob)
+        bmt = bmesh.new()
 
         # Initialize stuff
-        ug_props = bpy.context.scene.ug_props
         n = 0 # new cell count
         niter = 0 # iteration counter
-        speeds = [] # Extrusion speed vectors, can be updated per extruded layer
-        new_ugfaces = list(initial_ugfaces) # List of created ugfaces
-
-        import bmesh
-        import time
-        ob = ug.get_ug_object()
-        bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(ob.data)  # Actual mesh
-        bmt = bmesh.new()  # Trajectory mesh
         info_text = ""  # Additional info for user
 
         # Extrude layers
@@ -124,6 +143,10 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                     ug_shell.extrude_cells_shell(\
                         niter, bm, bmt, speeds, new_ugfaces, \
                         is_last_layer)
+                # Exit if interactive correction mode is enabled
+                if nf == 0:
+                    self.report({'INFO'}, info_text)
+                    return {'FINISHED'}
             t1 = time.time()
 
             l.debug("Extruded layer %d, " % (i + 1) \
@@ -132,9 +155,14 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                     + "(%d cells/s)" % int(nf/(t1-t0)))
             n += nf
 
+        # Finishing
+        ug_props.interactive_correction_mode = False
+        ug_props.extrusion_source_ob_name = ""
         flip_initial_faces(bm, initial_ugfaces)
         bm.normal_update()
-        bmesh.update_edit_mesh(mesh=ob.data)
+        ob = ug.get_ug_object()
+        context.view_layer.objects.active = ob
+        bm.to_mesh(ob.data)
         bm.free()
         recreate_trajectory_object(bmt)
         bmt.free()
@@ -143,6 +171,8 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Return to original mode
         bpy.ops.object.mode_set(mode=mode)
 
+        ug_props.interactive_correction_mode = False
+
         text = "Extruded %d new cells." % n
         if info_text:
             text += " " + info_text
@@ -150,26 +180,25 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def initialize_extrusion():
-    '''Initialize UG data for extrusion. For a new unstructured grid,
-    create UG object and UGFaces from faces of active object.
-    Return values are boolean for successful initialization and
-    list of initial faces (if initializing from faces when no cells exist).
-    '''
+def check_requirements(source_ob):
+    '''Check that pre-requisites for extrusion are met'''
 
-    initial_ugfaces = [] # List of new UGFaces
+    if not ug.get_ug_object() and source_ob.name == ug.obname:
+        return False, "Source object name can't be " + ug.obname
 
-    # Do nothing if there is already an UG state
-    if ug.exists_ug_state():
-        return True, "UG state exists, OK to continue", initial_ugfaces
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    if source_ob.data.total_face_sel == 0:
+        return False, "No faces selected"
+    bpy.ops.object.mode_set(mode = 'OBJECT')
 
-    source_ob = bpy.context.active_object
-    if source_ob.name == ug.obname:
-        return False, "Source object name can't be " + ug.obname, initial_ugfaces
+    ug_props = bpy.context.scene.ug_props
+    ug_props.extrusion_source_ob_name = source_ob.name
 
-    # Mode switch is needed to make sure mesh is saved to original object
-    bpy.ops.object.mode_set(mode='OBJECT')
-    #bpy.ops.object.mode_set(mode='EDIT')
+    return True, "Requirements for extrusion are met"
+
+
+def create_bmesh_from_selection(source_ob):
+    '''Creates bmesh from current face selection'''
 
     import bmesh
     # Couldn't use bmesh.from_edit_mesh() here because original mesh
@@ -178,13 +207,13 @@ def initialize_extrusion():
 
     # Create selected faces to bmesh
     new_verts = {}
-    new_faces = []
+    faces_verts = []
     for p in source_ob.data.polygons:
         if not p.select:
             continue
         verts = []
         for vi in p.vertices:
-            # New vert exists
+            # Vert exists
             if vi in new_verts:
                 verts.append(new_verts[vi])
                 continue
@@ -192,29 +221,47 @@ def initialize_extrusion():
             v = bm.verts.new(source_ob.data.vertices[vi].co)
             verts.append(v)
             new_verts[vi] = v
-        new_faces.append(verts)
+        faces_verts.append(verts)
     bm.verts.ensure_lookup_table()
     bm.verts.index_update()
 
     # Create faces
-    for nf in new_faces:
-        f = bm.faces.new(nf)
+    for verts in faces_verts:
+        f = bm.faces.new(verts)
         f.normal_update()
         f.select_set(True)
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
 
-    # Bail out if there are no faces
-    if len(bm.faces) == 0:
-        return False, "No faces selected", initial_ugfaces
+    return bm
 
-    # Check mesh for hanging verts
+
+def initialize_extrusion(source_ob):
+    '''Initialize UG data for extrusion. For a new unstructured grid,
+    create UG object and UGFaces from faces of active object.
+    Return values are boolean for successful initialization and
+    list of initial faces (if initializing from faces when no cells exist).
+    '''
+
+    is_ok, text = check_requirements(source_ob)
+
+    initial_ugfaces = [] # List of new UGFaces
+    bm = create_bmesh_from_selection(source_ob)
+    if len(bm.faces) == 0:
+        raise Exception("Internal error, no faces in bmesh")
+
+    # Check mesh for hanging verts. Hanging verts are currently a
+    # problem because they create two faces between same two cells in
+    # extrusion. FIXME: Do not extrude hanging verts. Its possible to
+    # create a side face.
     vertlist = check_hanging_face_verts(bm)
     if vertlist:
-        for f in bm.faces:
-            f.select_set(False)
+        bm.select_mode = {'VERT'}
+        for v in bm.verts:
+            v.select_set(False)
         for v in vertlist:
             v.select_set(True)
+        bm.select_flush_mode()
         bm.to_mesh(source_ob.data)
         bm.free()
         return False, "Found %d hanging vert(s)" % len(vertlist), initial_ugfaces

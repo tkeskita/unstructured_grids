@@ -39,6 +39,7 @@ if "bpy" in locals():
     importlib.reload(io_vtu)
     importlib.reload(ug_op)
     importlib.reload(ug_extrude)
+    importlib.reload(ug_shell)
     importlib.reload(ug_zones)
     importlib.reload(ug_dissolve)
     importlib.reload(ug_checks)
@@ -51,6 +52,7 @@ else:
         io_vtu,
         ug_op,
         ug_extrude,
+        ug_shell,
         ug_zones,
         ug_dissolve,
         ug_checks,
@@ -125,6 +127,12 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Boolean for Generating Internal Face Edges",
         default=False,
     )
+    extrusion_source_ob_name: bpy.props.StringProperty(
+        name="Source Object Name",
+        description="Internal Source Object Name Holder",
+        default="",
+        maxlen=0,
+    )
     extrusion_thickness: bpy.props.FloatProperty(
         name="Extrusion Thickness",
         description="Extrusion Thickness (Cell Side Length Perpendicular to Surface)",
@@ -192,6 +200,16 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1e-4,
         precision=6,
         min=1e-12, max=1e-1
+    )
+    interactive_correction: bpy.props.BoolProperty(
+        name="Interactive Correction",
+        description="Manually Modify Extrusion Directions Before Cell Creation",
+        default=True,
+    )
+    interactive_correction_mode: bpy.props.BoolProperty(
+        name="Interactive Correction Mode",
+        description="Internal State Variable for Interactive Correction Mode",
+        default=False,
     )
     extrusion_courant_number: bpy.props.FloatProperty(
         name="Extrusion Courant Number",
@@ -317,6 +335,19 @@ class VIEW3D_PT_UG_GUI:
         layout = self.layout
         ug_props = context.scene.ug_props
 
+        if ug_props.interactive_correction_mode:
+            row = layout.row()
+            row.label(text="Interactive Correction Mode:")
+            row = layout.row()
+            row.label(text="Move vertices of Interactive")
+            row = layout.row()
+            row.label(text="Correction Object, then run")
+            row = layout.row()
+            row.label(text="Finish Extrude Cells")
+            row = layout.row()
+            row.operator("unstructured_grids.extrude_cells", text="Finish Extrude Cells")
+            return
+
         row = layout.row()
         row.label(text=ug.ug_print_stats())
 
@@ -374,6 +405,8 @@ class VIEW3D_PT_UG_GUI:
         row.label(text="Expression for Scaling Thickness:")
         row = layout.row()
         row.prop(ug_props, "extrusion_scale_thickness_expression", text="")
+        row = layout.row()
+        row.prop(ug_props, "extrusion_create_trajectory_object")
 
         if ug_props.extrusion_method == "hyperbolic":
             row = layout.row()
@@ -405,11 +438,11 @@ class VIEW3D_PT_UG_GUI:
                 row = layout.row()
                 row.prop(ug_props, "perturbation_factor")
             row = layout.row()
+            row.prop(ug_props, "interactive_correction")
+            row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells", \
                          icon='EXPERIMENTAL')
         else:
-            row = layout.row()
-            row.prop(ug_props, "extrusion_create_trajectory_object")
             row = layout.row()
             row.operator("unstructured_grids.extrude_cells", text="Extrude Cells")
 

@@ -367,6 +367,7 @@ def exists_ug_state():
 
     global ugcells
     test = False
+    # Require at least one cell
     for c in ugcells:
         if c.deleted == False:
             test = True
