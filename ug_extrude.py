@@ -89,12 +89,13 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Make sure mesh is saved to original object
         bpy.ops.object.mode_set(mode='OBJECT')
 
+        is_ok, text = check_requirements(context.active_object)
+        if not is_ok:
+            self.report({'ERROR'}, "Check failed: " + text)
+            return {'FINISHED'}
+
         # If interactive correction is requested, prepare for it and exit
         if ug_props.interactive_correction:
-            is_ok, text = check_requirements(context.active_object)
-            if not is_ok:
-                self.report({'ERROR'}, "Check failed: " + text)
-                return {'FINISHED'}
             ug_props.interactive_correction_mode = True
             if ug_props.extrusion_method == "shell":
                 from . import ug_shell
