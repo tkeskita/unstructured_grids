@@ -80,19 +80,6 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
     add_base_face_to_cells(base_faces, ugci0)
     thickness_update()
 
-    if ug_props.check_for_intersections:
-        intersecting_verts = check_for_intersections(bm, top_verts)
-        bm.select_mode = {'VERT'}
-        for f in bm.verts:
-            f.select = False
-        if intersecting_verts:
-            for v in intersecting_verts:
-                v.select = True
-            info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
-        else:
-            info_text = "No intersections detected."
-        bm.select_flush_mode()
-
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
         for v, speed in zip(base_verts, speeds):
@@ -102,7 +89,7 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
         bmt.verts.ensure_lookup_table()
         bmt.verts.index_update()
 
-    return niter, bm, bmt, len(base_faces), speeds, new_ugfaces, info_text
+    return niter + 1, bm, bmt, len(base_faces), speeds, new_ugfaces, info_text
 
 
 def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
@@ -238,16 +225,25 @@ def interactively_correct_speeds(bm, base_verts, base_faces, speeds):
     # TODO: Code duplication
     if ug_props.check_for_intersections:
         intersecting_verts = check_for_intersections(bm, top_verts)
-        bm.select_mode = {'VERT'}
-        for f in bm.verts:
-            f.select = False
         if intersecting_verts:
+            bm.select_mode = {'VERT'}
+            for v in bm.verts:
+                v.select = False
             for v in intersecting_verts:
                 v.select = True
             info_text = "WARNING: Highlighted %d intersecting vertices." % len(intersecting_verts)
         else:
             info_text = "No intersections detected."
         bm.select_flush_mode()
+    else:
+        # Select top verts only
+        bm.select_mode = {'VERT'}
+        for v in bm.verts:
+            v.select = False
+        for v in top_verts:
+            v.select = True
+        bm.select_flush_mode()
+
 
     # # FIXME: Highlight only extrusion side edges
     # bm.select_mode = {'VERT'}
