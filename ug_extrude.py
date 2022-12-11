@@ -122,7 +122,10 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         speeds = [] # Extrusion speed vectors, can be updated per extruded layer
         bpy.ops.object.mode_set(mode='OBJECT')
         context.view_layer.objects.active = source_ob
-        bm = create_bmesh_from_selection(source_ob, only_selected=False)
+        if ug.exists_ug_state():
+            bm = create_bmesh_from_selection(source_ob, only_selected=False)
+        else:
+            bm = create_bmesh_from_selection(source_ob, only_selected=True)
         bmt = bmesh.new()
 
         # Initialize stuff
