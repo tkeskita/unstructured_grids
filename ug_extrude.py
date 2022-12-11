@@ -108,6 +108,8 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
             source_ob = bpy.data.objects[ug_props.extrusion_source_ob_name]
         else:
             source_ob = context.active_object
+        l.debug("Source object is " + str(source_ob.name))
+
         is_ok, text, initial_ugfaces = initialize_extrusion(source_ob)
         if not is_ok:
             self.report({'ERROR'}, "Initialization failed: " + text)
@@ -131,7 +133,7 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
             t0 = time.time()
             if ug_props.extrusion_method == "fixed":
                 bm, bmt, nf, speeds, new_ugfaces = extrude_cells_fixed( \
-                    bm, bmt, speeds, new_ugfaces)
+                    i, bm, bmt, speeds, new_ugfaces)
             elif ug_props.extrusion_method == "hyperbolic":
                 from . import ug_hyperbolic
                 niter, bm, bmt, nf, speeds, new_ugfaces = \
@@ -142,19 +144,14 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                 from . import ug_shell
                 niter, bm, bmt, nf, speeds, new_ugfaces, info_text = \
                     ug_shell.extrude_cells_shell(\
-                        niter, bm, bmt, speeds, new_ugfaces, \
+                        i, niter, bm, bmt, speeds, new_ugfaces, \
                         is_last_layer)
-                # Exit if interactive correction mode is enabled
-                if nf == 0:
-                    self.report({'INFO'}, info_text)
-                    return {'FINISHED'}
             t1 = time.time()
-
+            n += nf
             l.debug("Extruded layer %d, " % (i + 1) \
                     + "cells: %d " % n \
                     + "iters: %d " % niter \
                     + "(%d cells/s)" % int(nf/(t1-t0)))
-            n += nf
 
         # Finishing
         ug_props.interactive_correction_mode = False
@@ -186,6 +183,10 @@ def check_requirements(source_ob):
 
     if not ug.get_ug_object() and source_ob.name == ug.obname:
         return False, "Source object name can't be " + ug.obname
+
+    from .ug_shell import ic_ob_name
+    if source_ob.name == ic_ob_name:
+        return True, "Interactive Correction object exists"
 
     bpy.ops.object.mode_set(mode = 'EDIT')
     if source_ob.data.total_face_sel == 0:
@@ -335,7 +336,7 @@ def check_hanging_face_verts(bm):
     return vertlist
 
 
-def extrude_cells_fixed(bm, bmt, speeds, new_ugfaces):
+def extrude_cells_fixed(n, bm, bmt, speeds, new_ugfaces):
     '''Extrude new cells from current face selection using a simple
     extrusion method, where extrusion direction vector (speeds)
     point towards initial vertex normal direction.
@@ -364,21 +365,18 @@ def extrude_cells_fixed(bm, bmt, speeds, new_ugfaces):
         # Initial speeds from vertex normal speeds
         speeds = get_vertex_normal_speeds(base_verts, base_faces, \
                                           base_fis_of_vis)
-    else:
-        speeds = scale_speeds(speeds)
-
-    bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
+    df = calculate_layer_thickness(n)
+    bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=df)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
                                   base_faces, fis2edges, ugci0, ugfi0)
     correct_face_normals(bm, base_faces, ugci0)
     add_base_face_to_cells(base_faces, ugci0)
-    thickness_update()
 
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
         for v, speed in zip(base_verts, speeds):
             v0 = bmt.verts.new(v.co)
-            v1 = bmt.verts.new(v.co + speed)
+            v1 = bmt.verts.new(v.co + speed * ug_props.extrusion_thickness)
             bmt.edges.new([v0, v1])
         bmt.verts.ensure_lookup_table()
         bmt.verts.index_update()
@@ -521,7 +519,7 @@ def get_items_from_list(alist, ilist):
 
 
 def get_vertex_normal_speeds(verts, faces, fis_of_vis):
-    '''Calculate minimum vertex normal speeds by averaging face
+    '''Calculate normalized vertex normal speeds by averaging face
     normals surrounding each vertex, weighted by face vertex angle
     (the angle between the two edges of the face connected at vertex).
     '''
@@ -529,9 +527,6 @@ def get_vertex_normal_speeds(verts, faces, fis_of_vis):
     from mathutils import Vector
     import math
     ug_props = bpy.context.scene.ug_props
-
-    # Layer thickness
-    ext_len = ug_props.extrusion_thickness
 
     # Calculate new extrusion directions
     speeds = []
@@ -552,8 +547,6 @@ def get_vertex_normal_speeds(verts, faces, fis_of_vis):
         for nv, factor in zip(norvecs, angle_factors):
             norvec += factor * nv
         norvec.normalize()
-
-        norvec *= ext_len # Set velocity to minimum velocity
         speeds.append(norvec)
 
     return speeds
@@ -787,10 +780,7 @@ def cast_vertices(bm, base_verts, speeds, df):
 
     # Cast new vertices
     for i in range(len(base_verts)):
-        if ug_props.extrusion_method == "fixed":
-            newco = base_verts[i].co + speeds[i]
-        else:
-            newco = base_verts[i].co + df * speeds[i]
+        newco = base_verts[i].co + df * speeds[i]
         v2 = bm.verts.new(newco)
         vert_map[base_verts[i]] = v2
         top_verts.append(v2)
@@ -999,30 +989,31 @@ def add_base_face_to_cells(faces, ugci0):
         ugf.neighbour = c
 
 
-def thickness_update():
-    '''Update layer thickness using expression specified by user'''
+def calculate_layer_thickness(n):
+    '''Return thickness for layer n using expression specified by user'''
 
     ug_props = bpy.context.scene.ug_props
-    x = ug_props.extrusion_thickness
+    ntot = ug_props.extrusion_layers
+    target_thickness = ug_props.extrusion_thickness
+    x = 1.0
+    xn = 1.0
+    xsum = 1.0
     expr = ug_props.extrusion_scale_thickness_expression
     try:
-        ug_props.extrusion_thickness_previous = x
-        rval = eval(expr)
-        if fulldebug: l.debug("Expression returned %s" % str(rval))
-        ug_props.extrusion_thickness = float(rval)
+        # Calculate sum of relative layer thicknesses
+        for i in range(ntot - 1):
+            x = eval(expr)
+            xsum += x
+            if i == (n - 1):
+                xn = x
+        l.debug("Relative thickness sum " + str(xsum))
+        l.debug("Layer %d relative thickness %s" % (n, str(xn)))
+        layer_thickness = target_thickness * xn / xsum
+        l.debug("Layer thickness " + str(layer_thickness))
     except:
         l.error("Error in evaluating: %r" % expr)
-    # TODO: Add error notification to user if expression fails
-
-
-def scale_speeds(speeds):
-    '''Scale speeds to match change in target thickness'''
-
-    ug_props = bpy.context.scene.ug_props
-    x = ug_props.extrusion_thickness
-    x0 = ug_props.extrusion_thickness_previous
-    scaled_speeds = [val*(x/x0) for val in speeds]
-    return scaled_speeds
+        # TODO: Add error notification to user if expression fails
+    return layer_thickness
 
 
 def flip_initial_faces(bm, initial_ugfaces):

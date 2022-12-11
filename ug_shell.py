@@ -29,7 +29,7 @@ l = logging.getLogger(__name__)
 ic_ob_name = 'Interactive Correction'  # Name for interactive correction object
 
 
-def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
+def extrude_cells_shell(n, niter, bm, bmt, speeds, new_ugfaces, \
                         is_last_layer):
     '''Extrude new cells from current face selection using shell extrusion
     method
@@ -68,23 +68,21 @@ def extrude_cells_shell(niter, bm, bmt, speeds, new_ugfaces, \
                 bm, base_verts, base_faces, base_fis_of_vis, neighbour_vis_of_vi,
                 is_corners, is_boundaries
             )
-        else:
-            speeds = scale_speeds(speeds)
         if ug_props.shell_ensure_thickness:
             speeds = adjust_speeds(bm, base_verts, speeds)
 
-    bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=1.0)
+    df = calculate_layer_thickness(n)
+    bm, top_verts, vert_map = cast_vertices(bm, base_verts, speeds, df=df)
     top_faces = create_mesh_faces(bm, edge2sideface_index, vert_map, \
                                   base_faces, fis2edges, ugci0, ugfi0)
     correct_face_normals(bm, base_faces, ugci0)
     add_base_face_to_cells(base_faces, ugci0)
-    thickness_update()
 
     # Trajectory bmesh
     if ug_props.extrusion_create_trajectory_object and len(bmt.verts) == 0:
         for v, speed in zip(base_verts, speeds):
             v0 = bmt.verts.new(v.co)
-            v1 = bmt.verts.new(v.co + speed)
+            v1 = bmt.verts.new(v.co + speed * ug_props.extrusion_thickness)
             bmt.edges.new([v0, v1])
         bmt.verts.ensure_lookup_table()
         bmt.verts.index_update()
@@ -120,7 +118,6 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
 
     niter = 12  # Number of direction propagation iterations
     nw_factor = 0.2  # New weight increase factor
-    ext_len = ug_props.extrusion_thickness
 
     for iter in range(niter):
         l.debug("Direction propagation iteration %d" % iter)
@@ -147,7 +144,6 @@ def get_shell_speeds(bm, base_verts, base_faces, base_fis_of_vis, \
                 max_nw = max(max_nw, w)
             # Final scaling
             new_speed.normalize()
-            new_speed *= ext_len  # Set velocity to minimum velocity
             new_speeds.append(new_speed)
 
             # Calculate new weight based on maximum neigbour weight
@@ -176,7 +172,7 @@ def adjust_speeds(bm, base_verts, speeds):
     # to scale the speed.
     for v, speed in zip(base_verts, speeds):
         min_len = 1.0e+38  # Practical single precision float max
-        co = v.co + speed
+        co = v.co + speed * thickness
         for ray_dir in [-1.0 * f.normal for f in v.link_faces]:
             hit_co, hit_nor, hit_index, hit_length = \
                 bt.ray_cast(co, ray_dir)
@@ -311,6 +307,9 @@ def prepare_interactive_correction(source_ob):
     if ug_props.shell_ensure_thickness:
         speeds = adjust_speeds(bm, base_verts, speeds)
 
+    # Scale by extrusion thickness to show end result correctly
+    speeds = [x * ug_props.extrusion_thickness for x in speeds]
+
     info_text = interactively_correct_speeds(bm, base_verts, base_faces, speeds)
     ug_props.interactive_correction = False
     info_text += " Interactive Correction Object created for editing. "
@@ -326,6 +325,9 @@ def get_speeds_from_interactive_correction(base_verts):
     for i, v in enumerate(base_verts):
         top_vert = ob.data.vertices[i - nv]
         speeds.append(top_vert.co - v.co)
+    # Divide by extrusion thickness to scale back to normalized speeds
+    ug_props = bpy.context.scene.ug_props
+    speeds = [x / ug_props.extrusion_thickness for x in speeds]
     return speeds
 
 

@@ -135,7 +135,7 @@ class UGProperties(bpy.types.PropertyGroup):
     )
     extrusion_thickness: bpy.props.FloatProperty(
         name="Extrusion Thickness",
-        description="Extrusion Thickness (Cell Side Length Perpendicular to Surface)",
+        description="Extrusion Thickness (Total Thickness of All Extruded Layers)",
         default=0.05,
         precision=4,
         min=float_info.min, max=float_info.max
