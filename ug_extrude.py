@@ -103,22 +103,26 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
                 self.report({'INFO'}, text)
                 return {'FINISHED'}
 
-        # Initialize from selected faces in source object
         if ug_props.extrusion_source_ob_name:
             source_ob = bpy.data.objects[ug_props.extrusion_source_ob_name]
         else:
             source_ob = context.active_object
         l.debug("Source object is " + str(source_ob.name))
 
-        is_ok, text, initial_ugfaces = initialize_extrusion(source_ob)
-        if not is_ok:
-            self.report({'ERROR'}, "Initialization failed: " + text)
-            return {'FINISHED'}
+        if ug.exists_ug_state():
+            initial_ugfaces = []
+        else:
+            # Initialize from selected faces in source mesh object
+            is_ok, text, initial_ugfaces = initialize_extrusion(source_ob)
+            if not is_ok:
+                self.report({'ERROR'}, "Initialization failed: " + text)
+                return {'FINISHED'}
+
         new_ugfaces = list(initial_ugfaces) # List of created ugfaces
         speeds = [] # Extrusion speed vectors, can be updated per extruded layer
         bpy.ops.object.mode_set(mode='OBJECT')
         context.view_layer.objects.active = source_ob
-        bm = create_bmesh_from_selection(source_ob)
+        bm = create_bmesh_from_selection(source_ob, only_selected=False)
         bmt = bmesh.new()
 
         # Initialize stuff
@@ -169,8 +173,6 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         # Return to original mode
         bpy.ops.object.mode_set(mode=mode)
 
-        ug_props.interactive_correction_mode = False
-
         text = "Extruded %d new cells." % n
         if info_text:
             text += " " + info_text
@@ -199,8 +201,10 @@ def check_requirements(source_ob):
     return True, "Requirements for extrusion are met"
 
 
-def create_bmesh_from_selection(source_ob):
-    '''Creates bmesh from current face selection'''
+def create_bmesh_from_selection(source_ob, only_selected=True):
+    '''Creates bmesh from current face selection.
+    If argument only_selected is False, then all faces are used instead.
+    '''
 
     import bmesh
     # Couldn't use bmesh.from_edit_mesh() here because original mesh
@@ -210,8 +214,9 @@ def create_bmesh_from_selection(source_ob):
     # Create selected faces to bmesh
     new_verts = {}
     faces_verts = []
+    faces_selected = []
     for p in source_ob.data.polygons:
-        if not p.select:
+        if only_selected and not p.select:
             continue
         verts = []
         for vi in p.vertices:
@@ -224,14 +229,15 @@ def create_bmesh_from_selection(source_ob):
             verts.append(v)
             new_verts[vi] = v
         faces_verts.append(verts)
+        faces_selected.append(p.select)
     bm.verts.ensure_lookup_table()
     bm.verts.index_update()
 
     # Create faces
-    for verts in faces_verts:
+    for verts, face_selected in zip(faces_verts, faces_selected):
         f = bm.faces.new(verts)
         f.normal_update()
-        f.select_set(True)
+        f.select_set(face_selected)
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
 
@@ -239,7 +245,7 @@ def create_bmesh_from_selection(source_ob):
 
 
 def initialize_extrusion(source_ob):
-    '''Initialize UG data for extrusion. For a new unstructured grid,
+    '''Initialize UG data for the very first extrusion. For a new unstructured grid,
     create UG object and UGFaces from faces of active object.
     Return values are boolean for successful initialization and
     list of initial faces (if initializing from faces when no cells exist).
