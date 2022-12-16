@@ -165,6 +165,7 @@ def adjust_speeds(bm, base_verts, speeds):
     thickness = ug_props.extrusion_thickness
     scaled_speeds = []
     from mathutils.bvhtree import BVHTree
+    from .ug_extrude import EPS
     bt = BVHTree.FromBMesh(bm)
 
     # For each top point, cast rays towards inverse neighbor face
@@ -181,7 +182,9 @@ def adjust_speeds(bm, base_verts, speeds):
             ray_len = (co - hit_co).length
             if ray_len < min_len:
                 min_len = ray_len
-
+        if min_len < EPS:
+            # min_len = EPS
+            raise Exception("Internal error: min_len < EPS")
         if min_len < thickness:
             scale = thickness/min_len
             scale = min(scale, 2.0)  # Should this be an option?

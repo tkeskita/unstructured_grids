@@ -214,36 +214,62 @@ def create_bmesh_from_selection(source_ob, only_selected=True):
     # was modified after changes when bailing out.
     bm = bmesh.new()
 
-    # Create selected faces to bmesh
-    new_verts = {}
-    faces_verts = []
-    faces_selected = []
-    for p in source_ob.data.polygons:
-        if only_selected and not p.select:
-            continue
-        verts = []
-        for vi in p.vertices:
-            # Vert exists
-            if vi in new_verts:
-                verts.append(new_verts[vi])
+    # Full one-to-one copy (retain vertex and face indices)
+    if not only_selected:
+        # Vertices
+        for v in source_ob.data.vertices:
+            v = bm.verts.new(v.co)
+        bm.verts.ensure_lookup_table()
+        bm.verts.index_update()
+
+        # Faces
+        for p in source_ob.data.polygons:
+            bmverts = []
+            for vi in p.vertices:
+                bmverts.append(bm.verts[vi])
+            bm.faces.new(bmverts)
+        bm.faces.ensure_lookup_table()
+        bm.faces.index_update()
+
+        # Face selection
+        bm.select_mode = {'FACE'}
+        for i, p in enumerate(source_ob.data.polygons):
+            if p.select:
+              bm.faces[i].select_set(True)
+        bm.select_flush_mode()
+
+    # Copy only selected faces only (creates new indices)
+    else:
+        new_verts = {}
+        faces_verts = []
+        faces_selected = []
+        for p in source_ob.data.polygons:
+            if only_selected and not p.select:
                 continue
-            # Create new vert
-            v = bm.verts.new(source_ob.data.vertices[vi].co)
-            verts.append(v)
-            new_verts[vi] = v
-        faces_verts.append(verts)
-        faces_selected.append(p.select)
-    bm.verts.ensure_lookup_table()
-    bm.verts.index_update()
+            verts = []
+            for vi in p.vertices:
+                # Vert exists
+                if vi in new_verts:
+                    verts.append(new_verts[vi])
+                    continue
+                # Create new vert
+                v = bm.verts.new(source_ob.data.vertices[vi].co)
+                verts.append(v)
+                new_verts[vi] = v
+            faces_verts.append(verts)
+            faces_selected.append(p.select)
+        bm.verts.ensure_lookup_table()
+        bm.verts.index_update()
 
-    # Create faces
-    for verts, face_selected in zip(faces_verts, faces_selected):
-        f = bm.faces.new(verts)
-        f.normal_update()
-        f.select_set(face_selected)
-    bm.faces.ensure_lookup_table()
-    bm.faces.index_update()
+        # Create faces
+        for verts, face_selected in zip(faces_verts, faces_selected):
+            f = bm.faces.new(verts)
+            f.normal_update()
+            f.select_set(face_selected)
+        bm.faces.ensure_lookup_table()
+        bm.faces.index_update()
 
+    bm.normal_update()  # Important, otherwise normal vectors are zeros
     return bm
 
 
