@@ -166,9 +166,12 @@ class UG_OT_ExtrudeCells(bpy.types.Operator):
         flip_initial_faces(bm, initial_ugfaces)
         bm.normal_update()
         ob = ug.get_ug_object()
-        context.view_layer.objects.active = ob
         bm.to_mesh(ob.data)
         bm.free()
+        context.view_layer.objects.active = ob
+        ob.select_set(True)
+        ob.hide_set(False)
+        bpy.ops.object.mode_set(mode='OBJECT')
         recreate_trajectory_object(bmt)
         bmt.free()
         ug_op.set_faces_boundary_to_default(new_ugfaces)
