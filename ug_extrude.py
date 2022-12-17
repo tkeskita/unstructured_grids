@@ -290,21 +290,22 @@ def initialize_extrusion(source_ob):
     if len(bm.faces) == 0:
         raise Exception("Internal error, no faces in bmesh")
 
-    # Check mesh for hanging verts. Hanging verts are currently a
-    # problem because they create two faces between same two cells in
-    # extrusion. FIXME: Do not extrude hanging verts. Its possible to
-    # create a side face.
-    vertlist = check_hanging_face_verts(bm)
-    if vertlist:
-        bm.select_mode = {'VERT'}
-        for v in bm.verts:
-            v.select_set(False)
-        for v in vertlist:
-            v.select_set(True)
-        bm.select_flush_mode()
-        bm.to_mesh(source_ob.data)
-        bm.free()
-        return False, "Found %d hanging vert(s)" % len(vertlist), initial_ugfaces
+    # # Check mesh for hanging verts.
+    # # Disabled for now, hanging vertices don't seem to be problem for OpenFOAM.
+    # # Hanging verts create two faces between same two cells in
+    # # extrusion. Idea for fixing: Don't extrude hanging verts.
+    # # It is possible to create a side face.
+    # vertlist = check_hanging_face_verts(bm)
+    # if vertlist:
+    #     bm.select_mode = {'VERT'}
+    #     for v in bm.verts:
+    #         v.select_set(False)
+    #     for v in vertlist:
+    #         v.select_set(True)
+    #     bm.select_flush_mode()
+    #     bm.to_mesh(source_ob.data)
+    #     bm.free()
+    #     return False, "Found %d hanging vert(s)" % len(vertlist), initial_ugfaces
 
     ob = ug.initialize_ug_object()
 

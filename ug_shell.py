@@ -292,6 +292,23 @@ def prepare_interactive_correction(source_ob):
     ug_props = bpy.context.scene.ug_props
     bm = create_bmesh_from_selection(source_ob)
 
+    # # Check for hanging vertices
+    # # Disabled for now, hanging vertices don't seem to be problem for OpenFOAM
+    # vertlist = check_hanging_face_verts(bm)
+    # if vertlist:
+    #     ug_props.interactive_correction_mode = False
+    #     bm.select_mode = {'VERT'}
+    #     for v in bm.verts:
+    #         v.select_set(False)
+    #     for v in vertlist:
+    #         v.select_set(True)
+    #     bm.select_flush_mode()
+    #     bm.to_mesh(source_ob.data)
+    #     bm.free()
+    #     bpy.ops.object.mode_set(mode='EDIT')
+    #     bpy.ops.mesh.select_mode(type='VERT')
+    #     return "Error: Found %d hanging vert(s)" % len(vertlist)
+
     base_faces = [f for f in bm.faces if f.select]
     if fulldebug: l.debug("Face count at beginning: %d" % len(base_faces))
 
