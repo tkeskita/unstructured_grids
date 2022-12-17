@@ -1098,7 +1098,7 @@ def perturbed_intersection(length, bt, v):
     attempt to increase chances of finding an intersecting face.
     '''
 
-    CLOSEBY = 0.99  # Minimum fraction for relative length testing
+    CLOSEBY = 0.90  # Minimum fraction for relative length testing
     MIN_LEN = 1e-4  # Minimum required edge relative length
     from mathutils import Vector
     perturbation_points=[  # Cubic perturbation pattern
@@ -1115,7 +1115,6 @@ def perturbed_intersection(length, bt, v):
 
     for nv in get_neighbour_verts(v):
         for co in [v.co + length*x for x in perturbation_points]:
-            # bm.verts.new((co))  # Enable to see ray cast locations
             # Cast a ray towards neighbour vertex
             nvec = nv.co - co
             hit_co, hit_nor, hit_index, hit_length = \
@@ -1134,6 +1133,7 @@ def perturbed_intersection(length, bt, v):
                 continue
             if rlen > CLOSEBY:
                 continue
+            l.debug("Intersection detected at " + str(v.co) + " rlen " + str(rlen))
             return True
     return False
 
