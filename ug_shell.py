@@ -222,6 +222,7 @@ def interactively_correct_speeds(bm, base_verts, base_faces, speeds):
 
     # TODO: This intersection search is missing side faces
     # TODO: Code duplication
+    intersecting_verts = []
     if ug_props.check_for_intersections:
         intersecting_verts = check_for_intersections(bm, top_verts)
         if intersecting_verts:
@@ -234,8 +235,9 @@ def interactively_correct_speeds(bm, base_verts, base_faces, speeds):
         else:
             info_text = "No intersections detected."
         bm.select_flush_mode()
-    else:
-        # Select top verts only
+
+    # Select top verts only
+    if not intersecting_verts:
         bm.select_mode = {'VERT'}
         for v in bm.verts:
             v.select = False
