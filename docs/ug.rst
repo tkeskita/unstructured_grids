@@ -25,9 +25,9 @@ level.
 
 .. warning::
 
-   This add-on is experimental (under feature development). There are
-   no guarantees. Use at your own risk. Always check the resulting
-   exported mesh before use in simulations.
+   This add-on is experimental. There are no guarantees. Use at your
+   own risk. Always check the resulting exported mesh before use in
+   simulations.
 
 
 Main Features and Limitations
@@ -36,8 +36,8 @@ Main Features and Limitations
 - Since volume meshes are not natively supported in Blender, 
   cell and face information related to unstructured grids are kept in
   separate Python object data model. Data is stored as text strings.
-  Internal faces or edges are not shown in Blender, but vertices are
-  visible in Edit Mode.
+  Internal faces or edges are not shown in Blender, but boundary faces
+  and all vertices are visible in Edit Mode.
 
 - Unstructured grid is defined by lists of cells, cell faces and face vertices.
   Cell description is compatible with
@@ -45,13 +45,15 @@ Main Features and Limitations
   `PolyMesh description <https://cfd.direct/openfoam/user-guide/mesh-description/>`_,
   including named boundary faces (patches), and cell and face zones.
   Import and export is provided also for `VTK <https://vtk.org/>`_
-  `Unstructured Grid (.vtu) XML ASCII file format <https://lorensen.github.io/VTKExamples/site/VTKFileFormats/>`_.
+  `Unstructured Grid (.vtu) XML ASCII file format <https://kitware.github.io/vtk-examples/site/VTKFileFormats/>`_.
 
 - Supported native Blender operations include moving of vertices, assigning
   materials to faces (boundary patches) and assigning vertices to vertex groups
   (zones). Otherwise, modifications of unstructured grids rely on special
   operators ('UG' in operator name) which keep UG Data and Blender
   mesh object contents in sync.
+
+- New cells can be created by extrusion from a face selection.
 
 - **Many operations are slow for large meshes.**
 
@@ -63,7 +65,7 @@ Installation
 
 - Add-on code is available at
   https://github.com/tkeskita/unstructured_grids. To download add-on from
-  Github, Select “Clone or download”, then “Download ZIP”.
+  Github, Select "Code" --> “Download ZIP”.
 
 - Start Blender, go to “File” –> “User Preferences” –> “Add-ons” –> “Install” –> open the add-on zip file.
 
@@ -121,39 +123,52 @@ Extrusion of New Cells
 ----------------------
 
 **Extrude Cells** operator creates new cells from face selection based
-on Extrusion Settings shown on the Toolbar.
+on Extrusion Settings shown on the Toolbar. To extrude cells, first
+select one or more faces in the Unstructured Grid object (or any mesh
+object for first extrusion), then run **Extrude Cells** operator by
+clicking on the named button in the toolbar. Extrusion settings
+include:
 
-- *Extrustion Method* drop-down menu lists options for available extrusion methods:
+- *Extrustion Method* drop-down menu lists options for available
+  extrusion methods:
 
   - **Fixed Extrusion Method** is the most basic method. New cells are
     created by extruding each selected face vertex towards the vertex
-    normal direction. Vertex extrusion length is equal to
+    normal direction. Total vertex extrusion length is equal to
     *Thickness*. No checks for result quality or possible
     intersections are made.
 
-  - **Shell Extrusion Method** is a tool for adding flat cells on top
+  - **Shell Extrusion Method** is a more advanced method,
+    meant for addition of flat cells (boundary layer cells) on top
     of an existing surface mesh. This method extrudes each selected
     vertex in a direction, which is iteratively adjusted using
     surrounding vertex extrusion directions. The aim of this method is
     to apply an extrusion direction which reduces the risk of
-    intersections near convex shapes. This method is meant for adding
-    thin boundary layers on top of a boundary surface mesh.
+    creating intersections near convex shapes.
 
     .. warning::
 
         This method may create highly non-orthogonal or skewed
-        faces. The method creates intersecting faces for highly convex
-        shapes and shapes where two extrusion fronts meet.
+        faces. The method will create intersecting faces for highly
+        convex shapes and shapes where two extrusion fronts meet, if
+        extrusion thickness is too large (depends on the case).
 
     - **Ensure Layer Thickness** option scales extrusion length for
       the Shell Extrusion Method so that the layer thickness specified
       in the *Thickness* option is approximately reached. This option
       may cause increase of layer thickness for convex shapes. If this
-      option is disabled, then vertex extrusion length is equal to
+      option is disabled, then total vertex extrusion length is equal to
       *Thickness*.
 
-    - **Check for Intersections** enables intersection detection in
-      extrusion. Intersections can occur when extrusion directions of
+    - **Interactive Correction** creates a temporary Interactive
+      Correction object, before actually extruding the cells, so that
+      the user has a possibility to manually alter the extrusion
+      directions (vertex locations) for vertices. When the locations
+      have been edited in Blender, run *Finish Extrude Cells* to
+      proceed with the actual cell creation.
+
+    - **Check for Intersections** enables intersection detection for
+      interactive correction. Intersections can occur when extrusion directions of
       adjacent vertices cross each other. This happens when extrusion
       thickness is too large for the Shell Extrusion Method. There is
       no definite value for when intersections start to occur. If this
@@ -185,21 +200,20 @@ on Extrusion Settings shown on the Toolbar.
 
 - *Layers* specifies the number of cell layers for extrusion
 
-- *Thickness* specifies the length of side edges for extruded cells or
-  target height for the extruded cell layer.
+- *Thickness* specifies the total length of side edges for extruded
+  cells, or target height for all of the extruded cell layers.
 
 - *Expression for Scaling Thickness* allows user to specify a Python
-  expression which updates *Thickness* after extrusion of each
-  layer. *x* in the expression is thickness. The default value
+  expression which scales *Thickness* for each layer. 
+  *x* in the expression is layer thickness. The default value
   *x\*1.0* will keep thickness constant.
+
+- *Create Trajectory Object* will optionally create an additional
+  trajectory object, which contains the vertex extrusion edges only,
+  for debugging purposes.
 
 Note: Boundary vertices are always extruded in the vertex normal
 direction.
-
-To extrude cells, first select one or more faces in the Unstructured
-Grid object (or any mesh object for first extrusion), then run
-**Extrude Cells** operator by clicking on the named button in the
-toolbar.
 
 The following image illustrates the difference between the Fixed
 Extrusion (on left) and the Shell Extrusion (on right) methods:
@@ -367,7 +381,8 @@ OpenFOAM Export Workflow
   from Blender are not optimized in any way, so the resulting mesh may
   be inefficient for numerical solution.
 
-- Run OpenFOAM command `checkMesh` to make sure mesh is intact and ready for use.
+- Run OpenFOAM command `checkMesh` to make sure mesh does not contain
+  errors.
 
 
 OpenFOAM Trade Mark Notice

@@ -21,7 +21,7 @@
 bl_info = {
     "name": "Unstructured Grids for Blender",
     "author": "Tuomo Keskitalo",
-    "version": (0, 5, 0),
+    "version": (0, 6, 0),
     "blender": (2, 80, 0),
     "location": "File -> Import/Export, and 3D Viewport Side bar",
     "description": "Create, Import, Edit and Export Unstructured Grids (3D Volume Meshes)",

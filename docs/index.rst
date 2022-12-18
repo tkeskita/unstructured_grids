@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Unstructured Grids Addon for Blender 2.8
-========================================
+Unstructured Grids Addon for Blender
+====================================
 
 .. toctree::
    :maxdepth: 2
