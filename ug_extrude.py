@@ -52,6 +52,8 @@ EPS = 2.0 * EPS_FLOAT # Precision with a safety margin
 #
 # Fixed Extrusion Method - uses constant vertex normal direction and
 #    constant extrusion length.
+# Shell Extrusion Method - iteratively modified vertex normal direction
+#    https://github.com/tkeskita/unstructured_grids/issues/4
 # Hyperbolic Extrusion Method - an experimental and iterative method
 #    which adjusts extrusion direction and extrusion length of individual
 #    vertices according to surroundings.

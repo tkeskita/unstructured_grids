@@ -204,7 +204,7 @@ class UGProperties(bpy.types.PropertyGroup):
     interactive_correction: bpy.props.BoolProperty(
         name="Interactive Correction",
         description="Manually Modify Extrusion Directions Before Cell Creation",
-        default=True,
+        default=False,
     )
     interactive_correction_mode: bpy.props.BoolProperty(
         name="Interactive Correction Mode",
