@@ -177,6 +177,9 @@ include:
       and intersecting vertices are selected (highlighted in Vertex
       Select Mode).
 
+      Note: Intersections are currently detected only for extrusion top
+      faces (but not for side faces).
+
       The intersection detection algorithm casts rays from numerous
       starting points slighly away (perturbed locations) from each
       vertex towards neighbour vertices. Intersection is assumed to

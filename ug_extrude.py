@@ -296,7 +296,10 @@ def initialize_extrusion(source_ob):
     # # Disabled for now, hanging vertices don't seem to be problem for OpenFOAM.
     # # Hanging verts create two faces between same two cells in
     # # extrusion. Idea for fixing: Don't extrude hanging verts.
-    # # It is possible to create a side face.
+    # # Instead, use the edges of the hanging vert as bottom edges for
+    # # the side face. There is also the OpenFOAM utility zipUpMesh,
+    # # which might be used to remove hanging vertices.
+    #
     # vertlist = check_hanging_face_verts(bm)
     # if vertlist:
     #     bm.select_mode = {'VERT'}
