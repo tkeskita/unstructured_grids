@@ -22,8 +22,8 @@ is assumed to know Blender modelling and material systems on a basic
 level.
 
 The add-on has been tested with
-[Blender 2.93 LTS version](https://www.blender.org/) and
-[OpenFOAM Foundation](https://openfoam.org/) version 9 of OpenFOAM.
+[Blender 3.3 LTS version](https://www.blender.org/) and
+[OpenFOAM Foundation](https://openfoam.org/) version 10 of OpenFOAM.
 
 
 ## Documentation
@@ -42,42 +42,6 @@ for bug reporting. There is also
 and another one on [VTK discourse forum](https://discourse.vtk.org/t/unstructured-grids-for-blender/1959).
 
 If you use this add-on, please star the project in GitHub!
-
-## Development Ideas for Future
-
-- Don't save Unstructured Grid object in blend file to save disk space
-  (mesh is anyways thrown away and regenerated from UG text
-  strings)
-
-- Add Gzip option to OpenFOAM PolyMesh export
-
-- Split Cells (Edge Division) (e.g. hexahedral cell is split to 8
-  cells, tetrahedral cell is split into 4 cells)
-
-- Dissolve Internal Faces (merge cells)
-
-- Merge Overlapping Boundary Faces (e.g. to merge two mesh regions)
-
-- Separate Internal Faces (convert internal face to two boundary faces)
-
-- Split Cells (Center Slicing) (polyhedron cell face vertices are
-  connected to cell center)
-
-- Show Cells (creates temporary object with faces around
-  selected cells)
-
-- Fix Intersecting Boundaries (move boundary vertices so
-  that boundary faces don't intersect each other)
-
-- Support for OpenFOAM sets?
-
-- Mesh Quality metrics + operator to select bad cells. Definition of
-  bad cells depend on target simulation type, so there would need to
-  be several metrics. This would be nice-to-have but not essential,
-  since it is possible to use *checkMesh* utility of OpenFOAM, or
-  e.g. Mesh Quality filter in Paraview or e.g.
-  [BVTKNodes](https://github.com/tkeskita/BVtkNodes)
-  to evaluate mesh quality.
 
 
 ### OpenFOAM Trade Mark Notice
