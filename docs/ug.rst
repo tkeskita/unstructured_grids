@@ -388,6 +388,15 @@ OpenFOAM Export Workflow
   errors.
 
 
+Help and Feedback
+-----------------
+
+Please use GitHub issues for requests, discussion and feedback:
+https://github.com/tkeskita/unstructured_grids/issues
+
+If you use this add-on, please star the project in GitHub!
+
+
 OpenFOAM Trade Mark Notice
 --------------------------
 
