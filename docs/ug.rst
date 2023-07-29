@@ -57,7 +57,7 @@ Main Features and Limitations
 
 - **Many operations are slow for large meshes.**
 
-- Tested on Blender LTS version 3.3.
+- Tested on Blender LTS version 3.6.
 
 
 Installation

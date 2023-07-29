@@ -22,7 +22,7 @@ is assumed to know Blender modelling and material systems on a basic
 level.
 
 The add-on has been tested with
-[Blender 3.3 LTS version](https://www.blender.org/) and
+[Blender 3.6 LTS version](https://www.blender.org/) and
 [OpenFOAM Foundation](https://openfoam.org/) version 10 of OpenFOAM.
 
 
