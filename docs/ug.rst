@@ -276,6 +276,11 @@ Edit topology
 *Dissolve Edges* merges selected vertices which are connected by edges
 in pairwise manner. TODO: Experimental, needs to be improved.
 
+*Shrink Boundary* moves vertices of selected faces "inwards" towards
+ vertex normal direction by a distance specified in *Shrinking
+ Distance*. TODO: Experimental feature, needs to be improved.
+
+
 Zones
 -----
 

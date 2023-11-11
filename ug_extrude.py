@@ -241,6 +241,8 @@ def create_bmesh_from_selection(source_ob, only_selected=True):
         for i, p in enumerate(source_ob.data.polygons):
             if p.select:
               bm.faces[i].select_set(True)
+            # Set material
+            bm.faces[i].material_index = p.material_index
         bm.select_flush_mode()
 
     # Copy only selected faces only (creates new indices)
@@ -1154,6 +1156,59 @@ def get_neighbour_verts(v):
         elif e.verts[1] == v:
             vlist.append(e.verts[0])
     return vlist
+
+
+class UG_OT_ShrinkBoundary(bpy.types.Operator):
+    '''Moves selected boundary faces inward by a fixed distance'''
+    bl_idname = "unstructured_grids.shrink_boundary"
+    bl_label = "Shrink Boundary (UG)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT', 'EDIT_MESH'}
+
+    def execute(self, context):
+        mode = context.active_object.mode
+        ug_props = bpy.context.scene.ug_props
+        mode = context.active_object.mode
+
+        # Make sure mesh is saved to original object
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        ob = context.active_object
+        context.view_layer.objects.active = ob
+        bm = create_bmesh_from_selection(ob, only_selected=False)
+        bm, n = shrink_boundary(bm, ug_props.shrinking_distance)
+        bm.normal_update()
+        bm.to_mesh(ob.data)
+        bm.free()
+        bpy.ops.object.mode_set(mode=mode)
+
+        text = "Moved %d selected boundary face vertices" % n
+        self.report({'INFO'}, text)
+        return {'FINISHED'}
+
+def shrink_boundary(bm, df=0.05):
+    '''Shrinks the face selection in bm by moving the face vertices
+    towards weighted vertex normal direction by a fixed distance value df.
+    '''
+
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    ug_props = bpy.context.scene.ug_props
+
+    base_faces = [f for f in bm.faces if f.select]
+    base_verts, base_vis_of_fis, base_fis_of_vis, ibasevertmap = \
+        get_verts_and_relations(base_faces)
+    speeds = get_vertex_normal_speeds(base_verts, base_faces, \
+                                      base_fis_of_vis)
+    n = 0;
+    for v, speed in zip(base_verts, speeds):
+        if not v.select:
+            continue
+        v.co += -1.0 * speed * df
+        n += 1
+    return bm, n
 
 
 ##### Generic help functions #####

@@ -274,6 +274,11 @@ class UGProperties(bpy.types.PropertyGroup):
         default=1,
         min=1, max=1000
     )
+    shrinking_distance: bpy.props.FloatProperty(
+        name="Shrinking Distance",
+        description="Length Value for Shrinking Selected Boundary Faces",
+        default=0.02,
+    )
 
 def menu_import_polymesh(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
@@ -374,6 +379,12 @@ class VIEW3D_PT_UG_GUI:
         row.label(text="Edit topology:")
         row = layout.row()
         row.operator("unstructured_grids.dissolve_edges", text="Dissolve Edges", \
+                     icon='EXPERIMENTAL')
+
+        row = layout.row()
+        row.prop(ug_props, "shrinking_distance")
+        row = layout.row()
+        row.operator("unstructured_grids.shrink_boundary", text="Shrink Boundary", \
                      icon='EXPERIMENTAL')
 
         row = layout.row()
@@ -503,6 +514,7 @@ classes = (
     ug_op.UG_OT_ResetUGObject,
     ug_op.UG_OT_DeleteCells,
     ug_extrude.UG_OT_ExtrudeCells,
+    ug_extrude.UG_OT_ShrinkBoundary,
     ug_zones.UG_OT_EditFaceZoneOrientations,
     ug_zones.UG_OT_FinishFaceZoneOrientations,
     ug_dissolve.UG_OT_DissolveEdges,
