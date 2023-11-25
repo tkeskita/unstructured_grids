@@ -222,8 +222,10 @@ def create_bmesh_from_selection(source_ob, only_selected=True):
     # Full one-to-one copy (retain vertex and face indices)
     if not only_selected:
         # Vertices
+        bm.select_mode = {'VERT'}
         for v in source_ob.data.vertices:
-            v = bm.verts.new(v.co)
+            bv = bm.verts.new(v.co)
+            bv.select = v.select
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
 

@@ -279,6 +279,12 @@ class UGProperties(bpy.types.PropertyGroup):
         description="Length Value for Shrinking Selected Boundary Faces",
         default=0.02,
     )
+    inside_object_name: bpy.props.StringProperty(
+        name="Inside Object Name",
+        description="Name of Object for the Select Inside Verts Operator",
+        default="",
+    )
+
 
 def menu_import_polymesh(self, context):
     self.layout.operator(io_polymesh.UG_OT_ImportPolyMesh.bl_idname, \
@@ -374,6 +380,10 @@ class VIEW3D_PT_UG_GUI:
 
         row = layout.row()
         row.operator("unstructured_grids.delete_cells", text="Delete Cells")
+        row = layout.row()
+        row.prop(ug_props, "inside_object_name")
+        row = layout.row()
+        row.operator("unstructured_grids.select_verts_inside_object", text="Select Inside Verts")
 
         row = layout.row()
         row.label(text="Edit topology:")
@@ -513,6 +523,7 @@ classes = (
     ug_op.UG_OT_ResetView,
     ug_op.UG_OT_ResetUGObject,
     ug_op.UG_OT_DeleteCells,
+    ug_op.UG_OT_SelectVertsInsideObject,
     ug_extrude.UG_OT_ExtrudeCells,
     ug_extrude.UG_OT_ShrinkBoundary,
     ug_zones.UG_OT_EditFaceZoneOrientations,

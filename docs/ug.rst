@@ -269,6 +269,10 @@ Deletion of cells creates new boundary faces, which are added to
 *default* material (boundary patch, see below). Note: Cell deletions
 are not displayed correctly in Object Mode.
 
+*Inside Object Name* specifies an object name for the
+*Select Verts Inside* operator. This operator adds all vertices
+which are located inside the outward facing polygons of the specified
+object to selection. Polygons are assumed to form a closed volume.
 
 Edit topology
 -------------
@@ -278,7 +282,7 @@ in pairwise manner. TODO: Experimental, needs to be improved.
 
 *Shrink Boundary* moves vertices of selected faces "inwards" towards
  vertex normal direction by a distance specified in *Shrinking
- Distance*. TODO: Experimental feature, needs to be improved.
+ Distance*. TODO: Experimental feature, needs improvement.
 
 
 Zones

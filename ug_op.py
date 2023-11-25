@@ -463,3 +463,77 @@ def set_faces_boundary_to_default(ugflist):
         if ugf.is_boundary_face():
             ob.data.polygons[ugf.bi].material_index = mati
     bpy.ops.object.mode_set(mode = 'EDIT')
+
+
+class UG_OT_SelectVertsInsideObject(bpy.types.Operator):
+    '''Add vertices located inside specified object to the selection'''
+
+    bl_idname = "unstructured_grids.select_verts_inside_object"
+    bl_label = "Select Inside Verts (UG)"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH'
+
+    def execute(self, context):
+        from .ug_extrude import create_bmesh_from_selection
+        ug_props = bpy.context.scene.ug_props
+        if ug_props.inside_object_name not in bpy.data.objects:
+            self.report({'ERROR'}, "Error: Missing Object %r" % ug_props.inside_object_name)
+            return {'FINISHED'}
+
+        # Make sure mesh is saved to original object
+        mode = context.active_object.mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        ob = context.active_object
+
+        obi = bpy.data.objects[ug_props.inside_object_name]
+        context.view_layer.objects.active = obi
+        bmi = create_bmesh_from_selection(obi, only_selected=False)
+
+        context.view_layer.objects.active = ob
+        bm = create_bmesh_from_selection(ob, only_selected=False)
+
+        bm, n = select_verts_inside_mesh(bm, bmi)
+        bm.to_mesh(ob.data)
+        bm.free()
+        bmi.free()
+        bpy.ops.object.mode_set(mode=mode)
+        self.report({'INFO'}, "Added %d verts to selection" % n)
+        return {'FINISHED'}
+
+
+def select_verts_inside_mesh(bm, bmi):
+    '''Select bmesh bm vertices which are located inside faces defined in
+    bmesh bmi
+    '''
+
+    from mathutils.bvhtree import BVHTree
+    from mathutils import Vector
+    from random import random
+    bmi.normal_update()
+    bt = BVHTree.FromBMesh(bmi)
+
+    # For each vertex location, cast a ray to a direction and see what
+    # it hits
+    ray_dir = Vector((1.0, 1.0, 1.0)).normalized()
+    vlist = []
+    for v in bm.verts:
+        hit_co, hit_nor, hit_index, hit_length = \
+            bt.ray_cast(v.co, ray_dir)
+
+        # If ray hits world boundary, vertex is outside
+        if not hit_co:
+            continue
+
+        # Otherwise calculate alignment of hit normal direction with
+        # this face normal to determine if vertex is inside
+        cos_theta = ray_dir @ bmi.faces[hit_index].normal
+        if cos_theta > 0:
+            if not v.select:
+                vlist.append(v)
+
+    for v in vlist:
+        v.select = True
+
+    return bm, len(vlist)
