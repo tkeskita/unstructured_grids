@@ -15,13 +15,13 @@ The motivation for this work was the lack of open source volume
 mesh editors. There are numerous finite volume mesh generators,
 but practically no general or visual editors.
 
-Add-on only handles mesh topology and geometry (the definition of cells).
-Field data (cell data or point data) for the mesh is disregarded.
-Editing includes tasks like moving of selected vertices, deletion of
-existing cells, extrusion of new cells, and assignation of selected
-faces and cells to named boundaries and zones. The user of the add-on
-is assumed to know Blender modelling and material systems on a basic
-level.
+Add-on only handles volume mesh topology and geometry (the definition
+of cells). Field data (cell data or point data) for the mesh is
+disregarded. Supported volume mesh operations include moving of
+selected vertices, deletion of existing cells, extrusion of new cells,
+and assignation of selected faces and cells to named boundaries and
+zones. The user of the add-on is assumed to know Blender modelling and
+material systems on a basic level.
 
 .. warning::
 
@@ -33,11 +33,13 @@ level.
 Main Features and Limitations
 -----------------------------
 
-- Since volume meshes are not natively supported in Blender, 
-  cell and face information related to unstructured grids are kept in
-  separate Python object data model. Data is stored as text strings.
-  Internal faces or edges are not shown in Blender, but boundary faces
-  and all vertices are visible in Edit Mode.
+- **Many operations are slow for large meshes.** This is due to the
+  fact that volume meshes are not natively supported in Blender.
+  Therefore cell and face information related to unstructured grids
+  are kept in separate Python object data model, which is slow.
+
+- Internal faces and internal edges are not shown in Blender.
+  Boundary faces and all vertices are visible in Edit Mode.
 
 - Unstructured grid is defined by lists of cells, cell faces and face vertices.
   Cell description is compatible with
@@ -50,12 +52,14 @@ Main Features and Limitations
 - Supported native Blender operations include moving of vertices, assigning
   materials to faces (boundary patches) and assigning vertices to vertex groups
   (zones). Otherwise, modifications of unstructured grids rely on special
-  operators ('UG' in operator name) which keep UG Data and Blender
-  mesh object contents in sync.
+  operators ('UG' in operator name) which keep the cell data and Blender
+  mesh object in sync.
 
-- New cells can be created by extrusion from a face selection.
+- New cells can be created by extrusion from any face selection.
 
-- **Many operations are slow for large meshes.**
+- Unstructured grids with overlapping baffles (=overlapping boundary
+  faces defined by shared vertices) or split baffles (=overlapping boundary
+  faces using duplicated vertices) are not supported.
 
 - Tested on Blender LTS version 3.6.
 
@@ -273,6 +277,8 @@ are not displayed correctly in Object Mode.
 *Select Verts Inside* operator. This operator adds all vertices
 which are located inside the outward facing polygons of the specified
 object to selection. Polygons are assumed to form a closed volume.
+This operation is useful for creating cell zones.
+
 
 Edit topology
 -------------
@@ -281,8 +287,8 @@ Edit topology
 in pairwise manner. TODO: Experimental, needs to be improved.
 
 *Shrink Boundary* moves vertices of selected faces "inwards" towards
- vertex normal direction by a distance specified in *Shrinking
- Distance*. TODO: Experimental feature, needs improvement.
+vertex normal direction by a distance specified in *Shrinking
+Distance*. Note: Highly experimental feature, needs improvement.
 
 
 Zones
@@ -395,6 +401,18 @@ OpenFOAM Export Workflow
 
 - Run OpenFOAM command `checkMesh` to make sure mesh does not contain
   errors.
+
+
+FAQ
+---
+
+Q1: I get an error like this when importing a polyMesh:
+``IndexError: bpy_prop_collection[index]: index 123 out of range, size 123``
+
+A1: Your mesh most likely contains overlapping baffles or split
+baffles. Unfortunately those are not supported by this add-on.
+You can try to run OpenFOAM command `mergeBaffles`
+to remove the baffles, if that is an acceptable option for you.
 
 
 Help and Feedback
